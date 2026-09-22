@@ -1,0 +1,7 @@
+bin/
+obj/
+*.user
+*.suo
+*.log
+launcher-config.json
+diagnostic-*.ini
