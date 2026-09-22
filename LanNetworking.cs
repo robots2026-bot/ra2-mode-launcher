@@ -1,9 +1,24 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 
 namespace Ra2ModeLauncher;
+
+internal static class LanNetworkAddress
+{
+    public static string GetPreferredIPv4()
+    {
+        IEnumerable<NetworkInterface> candidates = NetworkInterface.GetAllNetworkInterfaces().Where(adapter => adapter.OperationalStatus == OperationalStatus.Up && adapter.NetworkInterfaceType != NetworkInterfaceType.Loopback);
+        foreach (NetworkInterface adapter in candidates.OrderByDescending(adapter => adapter.GetIPProperties().GatewayAddresses.Count > 0))
+        {
+            UnicastIPAddressInformation? address = adapter.GetIPProperties().UnicastAddresses.FirstOrDefault(item => item.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(item.Address) && !item.Address.ToString().StartsWith("169.254.", StringComparison.Ordinal));
+            if (address is not null) return address.Address.ToString();
+        }
+        return "";
+    }
+}
 
 internal sealed class LanLobbyHost : IDisposable
 {
@@ -36,7 +51,7 @@ internal sealed class LanLobbyHost : IDisposable
     {
         this.roomName = roomName;
         this.setup = setup;
-        players.Add(new LanPlayer(hostId, SanitizeName(hostName), "127.0.0.1", false, true));
+        players.Add(new LanPlayer(hostId, SanitizeName(hostName), LanNetworkAddress.GetPreferredIPv4(), false, true));
     }
 
     public Guid HostId => hostId;

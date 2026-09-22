@@ -52,5 +52,5 @@ internal sealed class LanMessage
 
 internal sealed record DiscoveredLanRoom(string Address, LanRoomAnnouncement Announcement)
 {
-    public override string ToString() => $"{Announcement.RoomName}  |  {Announcement.MapName}  |  {Announcement.Players}/{Announcement.Capacity}  |  {Address}";
+    public override string ToString() => $"{Announcement.RoomName}  |  {Announcement.MapName}  |  {Announcement.Players}/{Announcement.Capacity}  |  {Address}:{LanLobbyHost.LobbyPort}";
 }

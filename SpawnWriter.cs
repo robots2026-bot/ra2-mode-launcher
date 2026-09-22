@@ -112,7 +112,7 @@ internal static class SpawnWriter
             if (i == localIndex) continue;
             LanPlayer player = package.Players[i];
             LanSlot slot = humanSlots[i];
-            string address = player.IsHost && IsLoopback(player.Address) ? hostAddress : player.Address;
+            string address = player.IsHost && (string.IsNullOrWhiteSpace(player.Address) || IsLoopback(player.Address)) ? hostAddress : player.Address;
             Section(sb, $"Other{other++}", ("Name", Sanitize(player.Name)), ("Side", slot.Country.ToString()), ("Color", slot.Color.ToString()), ("Ip", address), ("Port", LanLobbyHost.GamePort.ToString()));
         }
 

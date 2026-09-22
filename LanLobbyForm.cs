@@ -8,7 +8,7 @@ internal sealed class LanLobbyForm : Form
     private readonly string playerName;
     private readonly LanGameSetup setup;
     private readonly TextBox roomName = new() { Text = "红警局域网房间", Width = 190 };
-    private readonly TextBox hostAddress = new() { Text = "127.0.0.1", Width = 150 };
+    private readonly TextBox hostAddress = new() { Width = 150, PlaceholderText = "例如 192.168.2.30" };
     private readonly ListBox rooms = new() { Dock = DockStyle.Fill, Height = 125 };
     private readonly ListView players = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, Height = 190 };
     private readonly CheckBox ready = new() { Text = "我已准备", AutoSize = true, Enabled = false };
@@ -50,14 +50,16 @@ internal sealed class LanLobbyForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        root.Controls.Add(new Label { Text = $"当前战场：{setup.MapName}　容量：{setup.Slots.Count} 人　端口：UDP 1232/1234、TCP 1233", AutoSize = true, Font = new Font(Font, FontStyle.Bold), Margin = new Padding(3, 3, 3, 10) });
+        root.Controls.Add(new Label { Text = $"当前战场：{setup.MapName}　容量：{setup.Slots.Count} 人　发现 UDP {LanLobbyHost.DiscoveryPort}　房间 TCP {LanLobbyHost.LobbyPort}　游戏 UDP {LanLobbyHost.GamePort}", AutoSize = true, Font = new Font(Font, FontStyle.Bold), Margin = new Padding(3, 3, 3, 10) });
 
         var discoveryBox = new GroupBox { Text = "1  创建或发现房间", Dock = DockStyle.Fill, Padding = new Padding(10) };
         var discoveryLayout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
         var createRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         Button create = new() { Text = "创建房间", AutoSize = true };
         create.Click += (_, _) => CreateRoom();
+        string localAddress = LanNetworkAddress.GetPreferredIPv4();
         createRow.Controls.AddRange([new Label { Text = "房间名", AutoSize = true, Padding = new Padding(0, 6, 0, 0) }, roomName, create,
+            new Label { Text = $"本机 IP：{(string.IsNullOrWhiteSpace(localAddress) ? "未检测到" : localAddress)}", AutoSize = true, Padding = new Padding(18, 6, 0, 0) },
             new Label { Text = "房主 IP", AutoSize = true, Padding = new Padding(18, 6, 0, 0) }, hostAddress]);
         discoveryLayout.Controls.Add(createRow, 0, 0);
         discoveryLayout.Controls.Add(rooms, 0, 1);
@@ -164,7 +166,7 @@ internal sealed class LanLobbyForm : Form
         foreach (LanPlayer player in state.Players)
         {
             var item = new ListViewItem(player.Name);
-            item.SubItems.Add(player.Address);
+            item.SubItems.Add(string.IsNullOrWhiteSpace(player.Address) ? $"未检测到:{LanLobbyHost.GamePort}" : $"{player.Address}:{LanLobbyHost.GamePort}");
             item.SubItems.Add(player.IsHost ? "房主" : "玩家");
             item.SubItems.Add(player.Ready ? "已准备" : "未准备");
             if (player.Id == localId) item.Font = new Font(players.Font, FontStyle.Bold);
