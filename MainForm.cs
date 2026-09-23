@@ -23,13 +23,14 @@ internal sealed class MainForm : Form
     private readonly DataGridView grid = new() { Dock = DockStyle.Fill, AutoGenerateColumns = false, AllowUserToAddRows = false, AllowUserToDeleteRows = false, RowHeadersVisible = false, BackgroundColor = Color.White, BorderStyle = BorderStyle.FixedSingle, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, SelectionMode = DataGridViewSelectionMode.FullRowSelect };
     private readonly Label status = new() { AutoSize = true, ForeColor = Color.DarkSlateBlue };
     private readonly Label roomStatus = new() { AutoSize = true, ForeColor = Color.DarkGreen };
-    private readonly CheckBox roomReady = new() { Text = "我已准备", AutoSize = true, Enabled = false };
+    private readonly Button roomReady = new() { Text = "准备", AutoSize = true, Height = 36, Enabled = false };
     private readonly Button roomStart = new() { Text = "开始游戏", AutoSize = true, Height = 38, Padding = new Padding(16, 0, 16, 0), BackColor = Color.FromArgb(164, 38, 44), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
     private readonly List<Guid?> rowPlayerIds = [];
     private LanLobbyHost? roomHost;
     private LanLobbyClient? roomClient;
     private bool applyingRoomState;
     private bool startingRoom;
+    private bool localRoomReady;
 
     public MainForm(RoomEntry entry)
     {
@@ -74,12 +75,12 @@ internal sealed class MainForm : Form
         superWeapons.CheckedChanged += (_, _) => PublishHostSetup();
         shortGame.CheckedChanged += (_, _) => PublishHostSetup();
         revealAllMap.CheckedChanged += (_, _) => PublishHostSetup();
-        roomReady.CheckedChanged += async (_, _) => await SetRoomReadyAsync();
+        roomReady.Click += async (_, _) => await SetRoomReadyAsync(!localRoomReady);
         roomStart.Click += async (_, _) => await StartRoomGameAsync();
         StartupTrace.Mark("basic controls initialized");
 
         config.PlayerName = entry.PlayerName;
-        participants.Add(new ParticipantRow { SlotType = 0, Name = entry.PlayerName, Country = GameData.Countries[0].Value, Color = GameData.Colors[0].Value, Team = 0, Difficulty = GameData.Difficulties[1].Value, Start = 1 });
+        participants.Add(new ParticipantRow { SlotType = 0, Name = entry.PlayerName, ReadyStatus = "房主", Country = GameData.Countries[0].Value, Color = GameData.Colors[0].Value, Team = 0, Difficulty = GameData.Difficulties[1].Value, Start = 1 });
         BuildGrid();
         StartupTrace.Mark("grid built");
         BuildLayout();
@@ -143,7 +144,7 @@ internal sealed class MainForm : Form
             ParticipantRow participant = participants[e.RowIndex];
             string column = grid.Columns[e.ColumnIndex].Name;
             bool inactive = participant.SlotType is 2 or 3;
-            if ((participant.SlotType == 0 && column == nameof(ParticipantRow.Difficulty)) || (inactive && column != nameof(ParticipantRow.SlotType)))
+            if ((participant.SlotType == 0 && column == nameof(ParticipantRow.Difficulty)) || (inactive && column != nameof(ParticipantRow.SlotType) && column != nameof(ParticipantRow.ReadyStatus)))
             {
                 e.Value = "—";
                 e.FormattingApplied = true;
@@ -154,6 +155,7 @@ internal sealed class MainForm : Form
         {
             ParticipantRow participant = participants[e.RowIndex];
             string column = grid.Columns[e.ColumnIndex].Name;
+            if (column == nameof(ParticipantRow.ReadyStatus)) { e.Cancel = true; return; }
             Guid? rowPlayerId = e.RowIndex < rowPlayerIds.Count ? rowPlayerIds[e.RowIndex] : null;
             if (rowPlayerId.HasValue)
             {
@@ -172,6 +174,7 @@ internal sealed class MainForm : Form
             {
                 if (changed.SlotType == 0) changed.SlotType = 2;
                 changed.Name = changed.SlotType switch { 1 => $"电脑 {e.RowIndex}", 2 => "开放", _ => "关闭" };
+                changed.ReadyStatus = changed.SlotType switch { 1 => "就绪", 2 => "等待加入", _ => "—" };
                 if (changed.SlotType == 1)
                 {
                     changed.Country = GameData.Countries[e.RowIndex % GameData.Countries.Length].Value;
@@ -187,6 +190,7 @@ internal sealed class MainForm : Form
         };
         grid.Columns.Add(ChoiceColumn(nameof(ParticipantRow.SlotType), "位置状态", GameData.SlotTypes, 105));
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = nameof(ParticipantRow.Name), DataPropertyName = nameof(ParticipantRow.Name), HeaderText = "名称", FillWeight = 105 });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = nameof(ParticipantRow.ReadyStatus), DataPropertyName = nameof(ParticipantRow.ReadyStatus), HeaderText = "准备状态", FillWeight = 90, ReadOnly = true });
         grid.Columns.Add(ChoiceColumn(nameof(ParticipantRow.Country), "国家", GameData.Countries, 125));
         grid.Columns.Add(ChoiceColumn(nameof(ParticipantRow.Color), "颜色", GameData.Colors, 90));
         grid.Columns.Add(ChoiceColumn(nameof(ParticipantRow.Team), "队伍", GameData.Teams, 100));
@@ -259,7 +263,6 @@ internal sealed class MainForm : Form
         Button leave = new() { Text = "退出房间", AutoSize = true, Height = 36 }; leave.Click += (_, _) => Close();
         Button prepare = new() { Text = "仅保存配置", AutoSize = true, Height = 36 }; prepare.Click += (_, _) => Generate(false);
         roomStatus.Padding = new Padding(0, 9, 12, 0);
-        roomReady.Padding = new Padding(0, 8, 4, 0);
         actions.Controls.AddRange([roomStart, roomReady, leave, prepare, roomStatus, status]);
         root.Controls.Add(actions, 0, 4);
         Controls.Add(root);
@@ -341,6 +344,7 @@ internal sealed class MainForm : Form
             {
                 SlotType = index == 1 ? 2 : 1,
                 Name = index == 1 ? "开放" : $"电脑 {index}",
+                ReadyStatus = index == 1 ? "等待加入" : "就绪",
                 Country = GameData.Countries[index % GameData.Countries.Length].Value,
                 Color = GameData.Colors[index].Value,
                 Team = 1,
@@ -582,6 +586,9 @@ internal sealed class MainForm : Form
                 {
                     SlotType = slotType,
                     Name = player?.Name ?? (slotType == 1 ? $"电脑 {i}" : slotType == 2 ? "开放" : "关闭"),
+                    ReadyStatus = player is not null
+                        ? state.Players.Count == 1 && player.IsHost ? "房主" : player.Ready ? "已准备" : player.IsHost ? "房主未准备" : "未准备"
+                        : slotType == 1 ? "就绪" : slotType == 2 ? "等待加入" : "—",
                     Country = slot.Country,
                     Color = slot.Color,
                     Team = slot.Team,
@@ -592,8 +599,9 @@ internal sealed class MainForm : Form
             }
             grid.Refresh();
             LanPlayer? local = state.Players.FirstOrDefault(player => player.Id == LocalRoomPlayerId);
+            localRoomReady = local?.Ready ?? false;
             roomReady.Enabled = state.Players.Count > 1;
-            roomReady.Checked = local?.Ready ?? false;
+            roomReady.Text = localRoomReady ? "取消准备" : "准备";
             roomReady.Visible = state.Players.Count > 1;
             bool isHost = roomHost is not null;
             roomStart.Visible = isHost;
@@ -636,13 +644,13 @@ internal sealed class MainForm : Form
         catch (Exception ex) { roomStatus.Text = ex.Message; }
     }
 
-    private async Task SetRoomReadyAsync()
+    private async Task SetRoomReadyAsync(bool ready)
     {
         if (applyingRoomState || !roomReady.Enabled) return;
         try
         {
-            if (roomHost is not null) roomHost.SetHostReady(roomReady.Checked);
-            else if (roomClient is not null) await roomClient.SetReadyAsync(roomReady.Checked);
+            if (roomHost is not null) roomHost.SetHostReady(ready);
+            else if (roomClient is not null) await roomClient.SetReadyAsync(ready);
         }
         catch (Exception ex) { roomStatus.Text = ex.Message; }
     }

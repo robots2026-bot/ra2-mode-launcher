@@ -29,6 +29,7 @@ internal sealed class ParticipantRow
 {
     public int SlotType { get; set; } = 2;
     public string Name { get; set; } = "电脑";
+    public string ReadyStatus { get; set; } = "等待加入";
     public int Country { get; set; } = GameData.Countries[8].Value;
     public int Color { get; set; } = GameData.Colors[1].Value;
     public int Team { get; set; }
