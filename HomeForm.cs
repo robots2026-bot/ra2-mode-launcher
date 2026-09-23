@@ -4,12 +4,12 @@ namespace Ra2ModeLauncher;
 
 internal sealed class HomeForm : Form
 {
+    private const int MapColumnWidth = 190;
     private sealed record RoomSeen(DiscoveredLanRoom Room, DateTime SeenAt);
 
     private readonly LauncherConfig config = LauncherConfig.Load();
     private readonly TextBox playerName = new() { Width = 150 };
     private readonly TextBox roomName = new() { Width = 190 };
-    private readonly TextBox directAddress = new() { Width = 145, PlaceholderText = "房主局域网 IP" };
     private readonly ComboBox savedGames = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ListView rooms = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, GridLines = true };
     private readonly MapPreviewControl mapPreview = new() { Dock = DockStyle.Fill };
@@ -35,8 +35,9 @@ internal sealed class HomeForm : Form
         Height = Math.Clamp((int)(area.Height * 0.76), 680, 850);
         MinimumSize = new Size(900, 620);
         StartPosition = FormStartPosition.CenterScreen;
-        playerName.Text = config.PlayerName;
-        roomName.Text = $"{config.PlayerName} 的房间";
+        string defaultPlayerName = string.IsNullOrWhiteSpace(config.PlayerName) || config.PlayerName == "Player" ? Environment.MachineName : config.PlayerName;
+        playerName.Text = defaultPlayerName;
+        roomName.Text = string.IsNullOrWhiteSpace(config.RoomName) || config.RoomName == "Player 的房间" ? $"{defaultPlayerName} 的房间" : config.RoomName;
         localMaps = MapScanner.Scan(config.RuntimePath);
         BuildLayout();
         ReloadSaves();
@@ -56,21 +57,20 @@ internal sealed class HomeForm : Form
         var title = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
         title.Controls.Add(new Label { Text = "局域网对局", AutoSize = true, Font = new Font(Font.FontFamily, 15f, FontStyle.Bold) });
         title.Controls.Add(new Label { Text = "自动发现同一局域网中的房间；选中后可查看地图与规则。", AutoSize = true, ForeColor = Color.DimGray });
-        var identity = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.Right, WrapContents = false };
-        identity.Controls.Add(new Label { Text = "玩家名称", AutoSize = true, Padding = new Padding(0, 7, 4, 0) }); identity.Controls.Add(playerName);
-        heading.Controls.Add(title, 0, 0); heading.Controls.Add(identity, 1, 0); root.Controls.Add(heading, 0, 0);
+        heading.Controls.Add(title, 0, 0); heading.SetColumnSpan(title, 2); root.Controls.Add(heading, 0, 0);
 
         var createBar = new GroupBox { Text = "创建或直接加入", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10), Margin = new Padding(0, 0, 0, 9) };
         var createActions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
         Button create = new() { Text = "创建房间", AutoSize = true, Height = 34, BackColor = Color.FromArgb(164, 38, 44), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
         create.FlatAppearance.BorderSize = 0; create.Click += (_, _) => OpenCreatedRoom();
-        Button joinIp = new() { Text = "按 IP 加入", AutoSize = true, Height = 32 }; joinIp.Click += (_, _) => OpenDirectRoom();
-        createActions.Controls.AddRange([new Label { Text = "房间名称", AutoSize = true, Padding = new Padding(0, 7, 2, 0) }, roomName, create, new Label { Text = "房主 IP", AutoSize = true, Padding = new Padding(16, 7, 2, 0) }, directAddress, joinIp, new Label { Text = $"本机 {DisplayAddress()}  ·  UDP {LanLobbyHost.DiscoveryPort} / TCP {LanLobbyHost.LobbyPort}", AutoSize = true, ForeColor = Color.DimGray, Padding = new Padding(16, 7, 0, 0) }]);
+        Button manualJoin = new() { Text = "手动连接…", AutoSize = true, Height = 32 }; manualJoin.Click += (_, _) => OpenDirectRoom();
+        createActions.Controls.AddRange([new Label { Text = "房间名称", AutoSize = true, Padding = new Padding(0, 7, 2, 0) }, roomName, create, manualJoin, new Label { Text = $"本机 {DisplayAddress()}  ·  UDP {LanLobbyHost.DiscoveryPort} / TCP {LanLobbyHost.LobbyPort}", AutoSize = true, ForeColor = Color.DimGray, Padding = new Padding(16, 7, 0, 0) }]);
         createBar.Controls.Add(createActions); root.Controls.Add(createBar, 0, 1);
 
         var lobby = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 580, Margin = new Padding(0, 0, 0, 9) };
         var listBox = new GroupBox { Text = "可用对局（自动刷新）", Dock = DockStyle.Fill, Padding = new Padding(9) };
-        rooms.Columns.Add("房间", 155); rooms.Columns.Add("房主", 90); rooms.Columns.Add("模式", 78); rooms.Columns.Add("地图", 155); rooms.Columns.Add("人数", 60); rooms.Columns.Add("状态", 70);
+        rooms.Columns.Add("房间", 155); rooms.Columns.Add("房主", 90); rooms.Columns.Add("模式", 78); rooms.Columns.Add("地图", MapColumnWidth); rooms.Columns.Add("人数", 60); rooms.Columns.Add("状态", 70);
+        rooms.ColumnWidthChanging += (_, e) => { if (e.ColumnIndex == 3) { e.NewWidth = MapColumnWidth; e.Cancel = true; } };
         rooms.SelectedIndexChanged += (_, _) => ShowSelectedRoom(); rooms.DoubleClick += (_, _) => JoinSelectedRoom();
         listBox.Controls.Add(rooms); lobby.Panel1.Controls.Add(listBox);
         var infoBox = new GroupBox { Text = "选中对局信息", Dock = DockStyle.Fill, Padding = new Padding(9) };
@@ -79,7 +79,8 @@ internal sealed class HomeForm : Form
         var previewBorder = new Panel { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(3) }; previewBorder.Controls.Add(mapPreview);
         info.Controls.Add(previewBorder, 0, 0); info.Controls.Add(roomDetails, 0, 1);
         joinSelected.Click += (_, _) => JoinSelectedRoom();
-        var joinRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft }; joinRow.Controls.Add(joinSelected); info.Controls.Add(joinRow, 0, 2);
+        var joinRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+        joinRow.Controls.Add(joinSelected); joinRow.Controls.Add(playerName); joinRow.Controls.Add(new Label { Text = "玩家名称", AutoSize = true, Padding = new Padding(0, 7, 3, 0) }); info.Controls.Add(joinRow, 0, 2);
         infoBox.Controls.Add(info); lobby.Panel2.Controls.Add(infoBox); root.Controls.Add(lobby, 0, 2);
 
         var saveBox = new GroupBox { Text = "本地存档", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(9) };
@@ -172,11 +173,25 @@ internal sealed class HomeForm : Form
         if (!SaveIdentity()) return;
         string name = roomName.Text.Trim();
         if (string.IsNullOrWhiteSpace(name)) { MessageBox.Show("请输入房间名称。", "无法创建", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        config.RoomName = name;
+        config.Save();
         OpenRoom(RoomEntry.Create(config.PlayerName, name));
     }
 
     private void JoinSelectedRoom() { DiscoveredLanRoom? selected = SelectedRoom(); if (selected is null || !SaveIdentity()) return; OpenRoom(RoomEntry.Join(config.PlayerName, selected.Address)); }
-    private void OpenDirectRoom() { if (!SaveIdentity() || string.IsNullOrWhiteSpace(directAddress.Text)) return; OpenRoom(RoomEntry.Join(config.PlayerName, directAddress.Text.Trim())); }
+    private void OpenDirectRoom()
+    {
+        if (!SaveIdentity()) return;
+        using var dialog = new Form { Text = "手动连接", Font = Font, Width = 430, Height = 155, MinimizeBox = false, MaximizeBox = false, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(14), ColumnCount = 2, RowCount = 2 };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var address = new TextBox { Dock = DockStyle.Fill, PlaceholderText = "例如 192.168.1.20" };
+        layout.Controls.Add(new Label { Text = "房主 IP", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 12, 0) }, 0, 0); layout.Controls.Add(address, 1, 0);
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+        Button connect = new() { Text = "连接", AutoSize = true, DialogResult = DialogResult.OK }; Button cancel = new() { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        actions.Controls.AddRange([connect, cancel]); layout.Controls.Add(actions, 0, 1); layout.SetColumnSpan(actions, 2); dialog.Controls.Add(layout); dialog.AcceptButton = connect; dialog.CancelButton = cancel;
+        if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(address.Text)) OpenRoom(RoomEntry.Join(config.PlayerName, address.Text.Trim()));
+    }
 
     private void OpenRoom(RoomEntry entry)
     {

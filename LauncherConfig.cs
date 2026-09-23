@@ -5,7 +5,8 @@ namespace Ra2ModeLauncher;
 internal sealed class LauncherConfig
 {
     public string RuntimePath { get; set; } = @"D:\Software\RA2Mode";
-    public string PlayerName { get; set; } = "Player";
+    public string PlayerName { get; set; } = Environment.MachineName;
+    public string RoomName { get; set; } = $"{Environment.MachineName} 的房间";
     public int ResolutionWidth { get; set; } = 1920;
     public int ResolutionHeight { get; set; } = 1080;
     public int GameSpeed { get; set; } = 1;
