@@ -10,7 +10,7 @@ internal static class Program
         StartupTrace.Mark("application initialized");
         try
         {
-            Application.Run(new MainForm());
+            Application.Run(new HomeForm());
         }
         catch (Exception ex)
         {

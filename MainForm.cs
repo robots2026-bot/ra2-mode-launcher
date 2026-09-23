@@ -5,6 +5,7 @@ namespace Ra2ModeLauncher;
 
 internal sealed class MainForm : Form
 {
+    private readonly RoomEntry entry;
     private readonly LauncherConfig config = LauncherConfig.Load();
     private readonly TextBox runtimePath = new() { Dock = DockStyle.Fill };
     private readonly ComboBox gameMode = Combo();
@@ -30,10 +31,11 @@ internal sealed class MainForm : Form
     private bool applyingRoomState;
     private bool startingRoom;
 
-    public MainForm()
+    public MainForm(RoomEntry entry)
     {
+        this.entry = entry;
         StartupTrace.Mark("form constructor entered");
-        Text = "红色警戒 2 / 尤里的复仇启动器";
+        Text = entry.Mode == RoomEntryMode.Create ? $"房间：{entry.RoomName}" : $"正在加入：{entry.HostAddress}";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Font = new Font("Microsoft YaHei UI", 9f);
         BackColor = Color.FromArgb(246, 247, 249);
@@ -76,7 +78,8 @@ internal sealed class MainForm : Form
         roomStart.Click += async (_, _) => await StartRoomGameAsync();
         StartupTrace.Mark("basic controls initialized");
 
-        participants.Add(new ParticipantRow { SlotType = 0, Name = config.PlayerName, Country = GameData.Countries[0].Value, Color = GameData.Colors[0].Value, Team = 0, Difficulty = GameData.Difficulties[1].Value, Start = 1 });
+        config.PlayerName = entry.PlayerName;
+        participants.Add(new ParticipantRow { SlotType = 0, Name = entry.PlayerName, Country = GameData.Countries[0].Value, Color = GameData.Colors[0].Value, Team = 0, Difficulty = GameData.Difficulties[1].Value, Start = 1 });
         BuildGrid();
         StartupTrace.Mark("grid built");
         BuildLayout();
@@ -88,9 +91,12 @@ internal sealed class MainForm : Form
         shortGame.Checked = config.ShortGame;
         ReloadMaps();
         StartupTrace.Mark("maps loaded");
-        ReloadSaves();
         StartupTrace.Mark("form constructor finished");
-        Shown += (_, _) => StartOwnRoom();
+        Shown += async (_, _) =>
+        {
+            if (entry.Mode == RoomEntryMode.Create) StartOwnRoom();
+            else await JoinRoomAsync(entry.HostAddress);
+        };
     }
 
     private static ComboBox Combo()
@@ -195,11 +201,10 @@ internal sealed class MainForm : Form
 
     private void BuildLayout()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16, 14, 16, 12), ColumnCount = 1, RowCount = 6 };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16, 14, 16, 12), ColumnCount = 1, RowCount = 5 };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
@@ -249,25 +254,14 @@ internal sealed class MainForm : Form
         rulesBox.Controls.Add(rules);
         root.Controls.Add(rulesBox, 0, 3);
 
-        var savesBox = new GroupBox { Text = "4  读取存档（可选）", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10) };
-        var saves = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 4 };
-        saves.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); saves.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); saves.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); saves.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        Button refreshSaves = new() { Text = "刷新存档", AutoSize = true }; refreshSaves.Click += (_, _) => ReloadSaves();
-        Button loadSave = new() { Text = "加载存档", AutoSize = true }; loadSave.Click += (_, _) => LoadSelectedSave();
-        savedGames.Dock = DockStyle.Fill;
-        saves.Controls.Add(new Label { Text = "存档", AutoSize = true, Padding = new Padding(0, 6, 6, 0) }, 0, 0); saves.Controls.Add(savedGames, 1, 0); saves.Controls.Add(refreshSaves, 2, 0); saves.Controls.Add(loadSave, 3, 0);
-        savesBox.Controls.Add(saves);
-        root.Controls.Add(savesBox, 0, 4);
-
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
         roomStart.FlatAppearance.BorderSize = 0;
-        Button nearby = new() { Text = "附近房间…", AutoSize = true, Height = 36 }; nearby.Click += async (_, _) => await JoinNearbyRoomAsync();
-        Button ownRoom = new() { Text = "创建本机房间", AutoSize = true, Height = 36 }; ownRoom.Click += (_, _) => StartOwnRoom();
+        Button leave = new() { Text = "退出房间", AutoSize = true, Height = 36 }; leave.Click += (_, _) => Close();
         Button prepare = new() { Text = "仅保存配置", AutoSize = true, Height = 36 }; prepare.Click += (_, _) => Generate(false);
         roomStatus.Padding = new Padding(0, 9, 12, 0);
         roomReady.Padding = new Padding(0, 8, 4, 0);
-        actions.Controls.AddRange([roomStart, roomReady, nearby, ownRoom, prepare, roomStatus, status]);
-        root.Controls.Add(actions, 0, 5);
+        actions.Controls.AddRange([roomStart, roomReady, leave, prepare, roomStatus, status]);
+        root.Controls.Add(actions, 0, 4);
         Controls.Add(root);
     }
 
@@ -539,7 +533,8 @@ internal sealed class MainForm : Form
             int hostRow = rowPlayerIds.FindIndex(id => id == LocalRoomPlayerId);
             string hostName = hostRow >= 0 && hostRow < participants.Count ? participants[hostRow].Name : config.PlayerName;
             DisposeRoomNetworking();
-            roomHost = new LanLobbyHost($"{hostName} 的房间", hostName, setup);
+            string selectedRoomName = string.IsNullOrWhiteSpace(entry.RoomName) ? $"{hostName} 的房间" : entry.RoomName.Trim();
+            roomHost = new LanLobbyHost(selectedRoomName, hostName, setup);
             roomHost.StateChanged += state => Ui(() => ApplyRoomState(state));
             roomHost.Launching += package => Ui(() => LaunchRoomPackage(package, roomHost?.HostId ?? Guid.Empty, "127.0.0.1"));
             roomHost.Error += message => Ui(() => roomStatus.Text = message);
@@ -652,28 +647,25 @@ internal sealed class MainForm : Form
         catch (Exception ex) { roomStatus.Text = ex.Message; }
     }
 
-    private async Task JoinNearbyRoomAsync()
+    private async Task JoinRoomAsync(string hostAddress, string? requestedPlayerName = null)
     {
-        using var browser = new LanRoomBrowserForm();
-        if (browser.ShowDialog(this) != DialogResult.OK) return;
         try
         {
-            string playerName = config.PlayerName;
-            int localIndex = rowPlayerIds.FindIndex(id => id == LocalRoomPlayerId);
-            if (localIndex >= 0 && localIndex < participants.Count) playerName = participants[localIndex].Name;
+            string player = string.IsNullOrWhiteSpace(requestedPlayerName) ? entry.PlayerName : requestedPlayerName;
             DisposeRoomNetworking();
             var client = new LanLobbyClient();
             roomClient = client;
             client.StateChanged += state => Ui(() => ApplyRoomState(state));
             client.LaunchReceived += package => Ui(() => LaunchRoomPackage(package, client.PlayerId, client.HostAddress));
             client.Error += message => Ui(() => roomStatus.Text = message);
-            roomStatus.Text = $"正在连接 {browser.SelectedAddress}:{LanLobbyHost.LobbyPort}…";
-            await client.ConnectAsync(browser.SelectedAddress, playerName);
+            roomStatus.Text = $"正在连接 {hostAddress}:{LanLobbyHost.LobbyPort}…";
+            await client.ConnectAsync(hostAddress, player);
         }
         catch (Exception ex)
         {
             roomStatus.Text = $"加入失败：{ex.Message}";
-            StartOwnRoom();
+            MessageBox.Show(ex.Message, "无法加入房间", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Close();
         }
     }
 
