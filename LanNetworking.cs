@@ -202,7 +202,25 @@ internal sealed class LanLobbyHost : IDisposable
             while (!token.IsCancellationRequested)
             {
                 LanRoomState state = CurrentState;
-                byte[] data = JsonSerializer.SerializeToUtf8Bytes(new LanRoomAnnouncement(roomName, setup.MapName, state.Players.Count, state.MaxHumanPlayers));
+                int openSlots = Math.Max(0, state.MaxHumanPlayers - state.Players.Count);
+                byte[] data = JsonSerializer.SerializeToUtf8Bytes(new LanRoomAnnouncement(
+                    roomName,
+                    state.Players.FirstOrDefault(player => player.IsHost)?.Name ?? "",
+                    setup.MapName,
+                    setup.MapFileName,
+                    setup.MapHash,
+                    setup.ComponentHash,
+                    setup.Ra2Mode,
+                    state.Players.Count,
+                    state.MaxHumanPlayers,
+                    openSlots,
+                    setup.Credits,
+                    setup.GameSpeed,
+                    setup.MaxGameTicks,
+                    setup.Crates,
+                    setup.SuperWeapons,
+                    setup.ShortGame,
+                    setup.RevealAllMap));
                 await udp.SendAsync(data, target, token);
                 await Task.Delay(1000, token);
             }

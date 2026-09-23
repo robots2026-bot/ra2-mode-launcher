@@ -35,7 +35,25 @@ internal sealed record LanPlayer(Guid Id, string Name, string Address, bool Read
 
 internal sealed record LanRoomState(string RoomName, string MapName, int Capacity, int MaxHumanPlayers, List<LanPlayer> Players, LanGameSetup Setup);
 
-internal sealed record LanRoomAnnouncement(string RoomName, string MapName, int Players, int Capacity);
+internal sealed record LanRoomAnnouncement(
+    string RoomName,
+    string HostName,
+    string MapName,
+    string MapFileName,
+    string MapHash,
+    string ComponentHash,
+    bool Ra2Mode,
+    int Players,
+    int Capacity,
+    int OpenSlots,
+    int Credits,
+    int GameSpeed,
+    int MaxGameTicks,
+    bool Crates,
+    bool SuperWeapons,
+    bool ShortGame,
+    bool RevealAllMap,
+    string Status = "等待中");
 
 internal sealed record LanLaunchPackage(int GameId, LanGameSetup Setup, List<LanPlayer> Players);
 
