@@ -39,7 +39,7 @@ internal sealed class LanLobbyHost : IDisposable
     private readonly TcpListener listener = new(IPAddress.Any, LobbyPort);
     private readonly Dictionary<Guid, Peer> peers = [];
     private readonly List<LanPlayer> players = [];
-    private readonly LanGameSetup setup;
+    private LanGameSetup setup;
     private readonly string roomName;
     private readonly Guid hostId = Guid.NewGuid();
 
@@ -75,13 +75,26 @@ internal sealed class LanLobbyHost : IDisposable
         _ = BroadcastStateAsync();
     }
 
+    public void UpdateSetup(LanGameSetup updated)
+    {
+        lock (gate)
+        {
+            int maxHumans = GetMaxHumanPlayers(updated);
+            if (players.Count > maxHumans) throw new InvalidOperationException($"当前有 {players.Count} 名真人，至少需要保留 {players.Count - 1} 个开放位置。");
+            setup = updated;
+            for (int i = 0; i < players.Count; i++) players[i] = players[i] with { Ready = false };
+        }
+        _ = BroadcastStateAsync();
+    }
+
+    public void UpdateHostPlayer(LanSlot slot) => UpdatePlayer(hostId, slot);
+
     public bool CanLaunch(out string reason)
     {
         lock (gate)
         {
-            if (players.Count < 2) { reason = "至少需要两名真人玩家。"; return false; }
             if (players.Count > setup.Slots.Count) { reason = "玩家数量超过地图容量。"; return false; }
-            if (players.Any(p => !p.Ready)) { reason = "还有玩家未准备。"; return false; }
+            if (players.Count > 1 && players.Any(p => !p.Ready)) { reason = "还有玩家未准备。"; return false; }
         }
         reason = "";
         return true;
@@ -125,7 +138,7 @@ internal sealed class LanLobbyHost : IDisposable
 
             lock (gate)
             {
-                if (players.Count >= setup.Slots.Count) throw new InvalidOperationException("房间已满。");
+                if (players.Count >= GetMaxHumanPlayers(setup)) throw new InvalidOperationException("房间没有开放的真人位置。");
                 string address = ((IPEndPoint)client.Client.RemoteEndPoint!).Address.ToString();
                 players.Add(new LanPlayer(id, SanitizeName(join.Name), address, false, false));
                 peer = new Peer(id, client, writer);
@@ -147,6 +160,11 @@ internal sealed class LanLobbyHost : IDisposable
                         if (index >= 0) players[index] = players[index] with { Ready = message.Ready };
                     }
                     await BroadcastStateAsync();
+                }
+                else if (message?.Type == "player-options" && message.Slot is not null)
+                {
+                    try { UpdatePlayer(id, message.Slot); }
+                    catch (Exception ex) { await writer.WriteLineAsync(JsonSerializer.Serialize(new LanMessage { Type = "notice", Error = ex.Message })); }
                 }
             }
         }
@@ -184,7 +202,7 @@ internal sealed class LanLobbyHost : IDisposable
             while (!token.IsCancellationRequested)
             {
                 LanRoomState state = CurrentState;
-                byte[] data = JsonSerializer.SerializeToUtf8Bytes(new LanRoomAnnouncement(roomName, setup.MapName, state.Players.Count, setup.Slots.Count));
+                byte[] data = JsonSerializer.SerializeToUtf8Bytes(new LanRoomAnnouncement(roomName, setup.MapName, state.Players.Count, state.MaxHumanPlayers));
                 await udp.SendAsync(data, target, token);
                 await Task.Delay(1000, token);
             }
@@ -218,11 +236,30 @@ internal sealed class LanLobbyHost : IDisposable
         }
     }
 
-    private LanRoomState Snapshot() => new(roomName, setup.MapName, setup.Slots.Count, [.. players]);
+    private LanRoomState Snapshot() => new(roomName, setup.MapName, setup.Slots.Count, GetMaxHumanPlayers(setup), [.. players], setup);
     private void RaiseStateChanged() => RaiseStateChanged(CurrentState);
     private void RaiseStateChanged(LanRoomState state) => StateChanged?.Invoke(state);
     private static LanMessage? Deserialize(string? line) => string.IsNullOrWhiteSpace(line) ? null : JsonSerializer.Deserialize<LanMessage>(line);
     private static string SanitizeName(string name) => name.Replace("\r", " ").Replace("\n", " ").Trim()[..Math.Min(name.Trim().Length, 20)];
+    private static int GetMaxHumanPlayers(LanGameSetup value) => Math.Min(value.Slots.Count, 1 + value.Slots.Skip(1).Count(slot => !slot.Computer && !slot.Closed));
+
+    private void UpdatePlayer(Guid id, LanSlot requested)
+    {
+        lock (gate)
+        {
+            int playerIndex = players.FindIndex(player => player.Id == id);
+            if (playerIndex < 0 || playerIndex >= setup.Slots.Count) throw new InvalidOperationException("玩家位置不存在。");
+            if (requested.Color is < 0 or > 7 || requested.Start < 1 || requested.Start > setup.Slots.Count) throw new InvalidOperationException("颜色或出生点无效。");
+            List<LanSlot> slots = [.. setup.Slots];
+            requested = requested with { Computer = false, Closed = false };
+            if (slots.Where((slot, index) => index != playerIndex && !slot.Closed).Any(slot => slot.Color == requested.Color)) throw new InvalidOperationException("该颜色已被占用。");
+            if (slots.Where((slot, index) => index != playerIndex && !slot.Closed).Any(slot => slot.Start == requested.Start)) throw new InvalidOperationException("该出生点已被占用。");
+            slots[playerIndex] = requested;
+            setup = setup with { Slots = slots };
+            players[playerIndex] = players[playerIndex] with { Ready = false };
+        }
+        _ = BroadcastStateAsync();
+    }
 
     public void Dispose()
     {
@@ -256,6 +293,7 @@ internal sealed class LanLobbyClient : IDisposable
     }
 
     public Task SetReadyAsync(bool ready) => SendAsync(new LanMessage { Type = "ready", Ready = ready });
+    public Task UpdatePlayerAsync(LanSlot slot) => SendAsync(new LanMessage { Type = "player-options", Slot = slot });
 
     private async Task SendAsync(LanMessage message)
     {
@@ -279,6 +317,7 @@ internal sealed class LanLobbyClient : IDisposable
                 }
                 else if (message?.Type == "launch" && message.Launch is not null) LaunchReceived?.Invoke(message.Launch);
                 else if (message?.Type == "error") throw new InvalidOperationException(message.Error ?? "房主拒绝了连接。");
+                else if (message?.Type == "notice") Error?.Invoke(message.Error ?? "房主拒绝了这项修改。");
             }
         }
         catch (OperationCanceledException) { }

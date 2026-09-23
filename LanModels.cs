@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 
 namespace Ra2ModeLauncher;
 
-internal sealed record LanSlot(int Country, int Color, int Team, int Difficulty, int Start, bool Computer);
+internal sealed record LanSlot(int Country, int Color, int Team, int Difficulty, int Start, bool Computer, bool Closed = false);
 
 internal sealed record LanGameSetup(bool Ra2Mode, string MapName, string MapFileName, byte[] MapData, string MapHash, string ComponentHash, int Credits, int GameSpeed, int MaxGameTicks, bool Crates, bool SuperWeapons, bool ShortGame, bool RevealAllMap, List<LanSlot> Slots)
 {
@@ -33,7 +33,7 @@ internal static class LanCompatibility
 
 internal sealed record LanPlayer(Guid Id, string Name, string Address, bool Ready, bool IsHost);
 
-internal sealed record LanRoomState(string RoomName, string MapName, int Capacity, List<LanPlayer> Players);
+internal sealed record LanRoomState(string RoomName, string MapName, int Capacity, int MaxHumanPlayers, List<LanPlayer> Players, LanGameSetup Setup);
 
 internal sealed record LanRoomAnnouncement(string RoomName, string MapName, int Players, int Capacity);
 
@@ -45,6 +45,7 @@ internal sealed class LanMessage
     public string? Name { get; set; }
     public Guid PlayerId { get; set; }
     public bool Ready { get; set; }
+    public LanSlot? Slot { get; set; }
     public LanRoomState? State { get; set; }
     public LanLaunchPackage? Launch { get; set; }
     public string? Error { get; set; }

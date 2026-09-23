@@ -21,6 +21,14 @@ internal sealed class MainForm : Form
     private readonly BindingList<ParticipantRow> participants = [];
     private readonly DataGridView grid = new() { Dock = DockStyle.Fill, AutoGenerateColumns = false, AllowUserToAddRows = false, AllowUserToDeleteRows = false, RowHeadersVisible = false, BackgroundColor = Color.White, BorderStyle = BorderStyle.FixedSingle, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, SelectionMode = DataGridViewSelectionMode.FullRowSelect };
     private readonly Label status = new() { AutoSize = true, ForeColor = Color.DarkSlateBlue };
+    private readonly Label roomStatus = new() { AutoSize = true, ForeColor = Color.DarkGreen };
+    private readonly CheckBox roomReady = new() { Text = "我已准备", AutoSize = true, Enabled = false };
+    private readonly Button roomStart = new() { Text = "开始游戏", AutoSize = true, Height = 38, Padding = new Padding(16, 0, 16, 0), BackColor = Color.FromArgb(164, 38, 44), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+    private readonly List<Guid?> rowPlayerIds = [];
+    private LanLobbyHost? roomHost;
+    private LanLobbyClient? roomClient;
+    private bool applyingRoomState;
+    private bool startingRoom;
 
     public MainForm()
     {
@@ -35,22 +43,37 @@ internal sealed class MainForm : Form
         Height = Math.Clamp((int)(workArea.Height * 0.76), 700, 800);
         MinimumSize = new Size(920, 640);
         StartPosition = FormStartPosition.CenterScreen;
+        FormClosed += (_, _) => DisposeRoomNetworking();
 
         runtimePath.Text = config.RuntimePath;
         gameMode.Items.AddRange(["红警2经典", "尤里复仇"]);
-        gameMode.SelectedIndexChanged += (_, _) => ApplyModeCountries();
+        gameMode.SelectedIndexChanged += (_, _) => { ApplyModeCountries(); PublishHostSetup(); };
         maps.SelectedIndexChanged += (_, _) =>
         {
             mapPreview.Map = maps.SelectedItem as MapInfo;
             if (maps.SelectedItem is MapInfo map) SyncParticipantSlots(map.StartingPoints);
+            PublishHostSetup();
         };
         mapPreview.StartSelected += selected =>
         {
-            ParticipantRow? human = participants.FirstOrDefault(item => item.SlotType == 0);
-            if (human is not null) { human.Start = selected; grid.Refresh(); }
+            int index = rowPlayerIds.FindIndex(id => id == LocalRoomPlayerId);
+            if (index >= 0 && index < participants.Count)
+            {
+                participants[index].Start = selected;
+                grid.Refresh();
+                UpdateLocalRoomPlayer(participants[index]);
+            }
         };
         resolution.Items.AddRange(GameData.Resolutions);
         gameSpeed.Items.AddRange(GameData.GameSpeeds);
+        gameSpeed.SelectedIndexChanged += (_, _) => PublishHostSetup();
+        credits.ValueChanged += (_, _) => PublishHostSetup();
+        crates.CheckedChanged += (_, _) => PublishHostSetup();
+        superWeapons.CheckedChanged += (_, _) => PublishHostSetup();
+        shortGame.CheckedChanged += (_, _) => PublishHostSetup();
+        revealAllMap.CheckedChanged += (_, _) => PublishHostSetup();
+        roomReady.CheckedChanged += async (_, _) => await SetRoomReadyAsync();
+        roomStart.Click += async (_, _) => await StartRoomGameAsync();
         StartupTrace.Mark("basic controls initialized");
 
         participants.Add(new ParticipantRow { SlotType = 0, Name = config.PlayerName, Country = GameData.Countries[0].Value, Color = GameData.Colors[0].Value, Team = 0, Difficulty = GameData.Difficulties[1].Value, Start = 1 });
@@ -67,6 +90,7 @@ internal sealed class MainForm : Form
         StartupTrace.Mark("maps loaded");
         ReloadSaves();
         StartupTrace.Mark("form constructor finished");
+        Shown += (_, _) => StartOwnRoom();
     }
 
     private static ComboBox Combo()
@@ -124,24 +148,36 @@ internal sealed class MainForm : Form
         {
             ParticipantRow participant = participants[e.RowIndex];
             string column = grid.Columns[e.ColumnIndex].Name;
+            Guid? rowPlayerId = e.RowIndex < rowPlayerIds.Count ? rowPlayerIds[e.RowIndex] : null;
+            if (rowPlayerId.HasValue)
+            {
+                if (column == nameof(ParticipantRow.SlotType) || rowPlayerId.Value != LocalRoomPlayerId) { e.Cancel = true; return; }
+            }
+            else if (roomClient is not null) { e.Cancel = true; return; }
             if ((participant.SlotType == 0 && column == nameof(ParticipantRow.Difficulty)) || (participant.SlotType is 2 or 3 && column != nameof(ParticipantRow.SlotType))) e.Cancel = true;
         };
         grid.CellValueChanged += (_, e) =>
         {
-            if (e.RowIndex < 0 || e.ColumnIndex < 0 || grid.Columns[e.ColumnIndex].Name != nameof(ParticipantRow.SlotType)) return;
+            if (applyingRoomState || e.RowIndex < 0 || e.ColumnIndex < 0) return;
             ParticipantRow changed = participants[e.RowIndex];
-            if (changed.SlotType == 0)
-                foreach (ParticipantRow other in participants.Where((_, index) => index != e.RowIndex && _.SlotType == 0)) other.SlotType = 2;
-            changed.Name = changed.SlotType switch { 0 => config.PlayerName, 1 => $"电脑 {e.RowIndex}", 2 => "开放", _ => "关闭" };
-            if (changed.SlotType == 1)
+            string column = grid.Columns[e.ColumnIndex].Name;
+            Guid? rowPlayerId = e.RowIndex < rowPlayerIds.Count ? rowPlayerIds[e.RowIndex] : null;
+            if (column == nameof(ParticipantRow.SlotType) && !rowPlayerId.HasValue)
             {
-                changed.Country = GameData.Countries[e.RowIndex % GameData.Countries.Length].Value;
-                changed.Color = GameData.Colors[e.RowIndex % GameData.Colors.Length].Value;
-                changed.Team = 1;
-                changed.Difficulty = 0;
-                changed.Start = e.RowIndex + 1;
+                if (changed.SlotType == 0) changed.SlotType = 2;
+                changed.Name = changed.SlotType switch { 1 => $"电脑 {e.RowIndex}", 2 => "开放", _ => "关闭" };
+                if (changed.SlotType == 1)
+                {
+                    changed.Country = GameData.Countries[e.RowIndex % GameData.Countries.Length].Value;
+                    changed.Color = GameData.Colors[e.RowIndex % GameData.Colors.Length].Value;
+                    changed.Team = 1;
+                    changed.Difficulty = 0;
+                    changed.Start = e.RowIndex + 1;
+                }
             }
             grid.Refresh();
+            if (rowPlayerId == LocalRoomPlayerId && rowPlayerId.HasValue) UpdateLocalRoomPlayer(changed);
+            else PublishHostSetup();
         };
         grid.Columns.Add(ChoiceColumn(nameof(ParticipantRow.SlotType), "位置状态", GameData.SlotTypes, 105));
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = nameof(ParticipantRow.Name), DataPropertyName = nameof(ParticipantRow.Name), HeaderText = "名称", FillWeight = 105 });
@@ -171,7 +207,7 @@ internal sealed class MainForm : Form
         heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var titleBlock = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = Padding.Empty };
         titleBlock.Controls.Add(new Label { Text = "红色警戒 2 / 尤里的复仇", AutoSize = true, Font = new Font(Font.FontFamily, 13f, FontStyle.Bold) });
-        titleBlock.Controls.Add(new Label { Text = "选择战场 → 设置参战方 → 调整规则 → 启动游戏", AutoSize = true, ForeColor = Color.DimGray });
+        titleBlock.Controls.Add(new Label { Text = "房间内同时设置地图、位置和规则；一人为单机，多人为局域网", AutoSize = true, ForeColor = Color.DimGray });
         var advanced = new Panel { Dock = DockStyle.Fill, AutoSize = true, Visible = false, Padding = new Padding(0, 4, 0, 8) };
         var paths = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 1 };
         paths.Controls.Add(PathRow("当前游戏目录", runtimePath, () => { ReloadMaps(); ReloadSaves(); }));
@@ -224,10 +260,13 @@ internal sealed class MainForm : Form
         root.Controls.Add(savesBox, 0, 4);
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
-        Button launch = new() { Text = "启动新游戏", AutoSize = true, Height = 38, Padding = new Padding(16, 0, 16, 0), BackColor = Color.FromArgb(164, 38, 44), ForeColor = Color.White, FlatStyle = FlatStyle.Flat }; launch.FlatAppearance.BorderSize = 0; launch.Click += (_, _) => Launch();
-        Button lan = new() { Text = "局域网联机", AutoSize = true, Height = 38, Padding = new Padding(14, 0, 14, 0) }; lan.Click += (_, _) => OpenLanLobby();
+        roomStart.FlatAppearance.BorderSize = 0;
+        Button nearby = new() { Text = "附近房间…", AutoSize = true, Height = 36 }; nearby.Click += async (_, _) => await JoinNearbyRoomAsync();
+        Button ownRoom = new() { Text = "创建本机房间", AutoSize = true, Height = 36 }; ownRoom.Click += (_, _) => StartOwnRoom();
         Button prepare = new() { Text = "仅保存配置", AutoSize = true, Height = 36 }; prepare.Click += (_, _) => Generate(false);
-        actions.Controls.AddRange([launch, lan, prepare, status]);
+        roomStatus.Padding = new Padding(0, 9, 12, 0);
+        roomReady.Padding = new Padding(0, 8, 4, 0);
+        actions.Controls.AddRange([roomStart, roomReady, nearby, ownRoom, prepare, roomStatus, status]);
         root.Controls.Add(actions, 0, 5);
         Controls.Add(root);
     }
@@ -306,8 +345,8 @@ internal sealed class MainForm : Form
             int index = participants.Count;
             participants.Add(new ParticipantRow
             {
-                SlotType = 1,
-                Name = $"电脑 {index}",
+                SlotType = index == 1 ? 2 : 1,
+                Name = index == 1 ? "开放" : $"电脑 {index}",
                 Country = GameData.Countries[index % GameData.Countries.Length].Value,
                 Color = GameData.Colors[index].Value,
                 Team = 1,
@@ -441,5 +480,253 @@ internal sealed class MainForm : Form
             UseShellExecute = true
         };
         Process.Start(psi);
+    }
+
+    private Guid LocalRoomPlayerId => roomHost?.HostId ?? roomClient?.PlayerId ?? Guid.Empty;
+
+    private LanGameSetup BuildRoomSetup(bool leavingJoinedRoom = false)
+    {
+        grid.EndEdit();
+        if (maps.SelectedItem is not MapInfo map) throw new InvalidOperationException("没有选择有效地图。");
+        string runtime = runtimePath.Text.Trim();
+        if (!Directory.Exists(runtime)) throw new DirectoryNotFoundException("当前游戏目录不存在。");
+        if (!File.Exists(Path.Combine(runtime, "Syringe.exe"))) throw new FileNotFoundException("运行目录中缺少 Syringe.exe。");
+
+        Guid localId = LocalRoomPlayerId;
+        var humans = new List<ParticipantRow>();
+        var open = new List<ParticipantRow>();
+        var computers = new List<ParticipantRow>();
+        var closed = new List<ParticipantRow>();
+        for (int i = 0; i < participants.Count; i++)
+        {
+            ParticipantRow row = participants[i];
+            Guid? playerId = i < rowPlayerIds.Count ? rowPlayerIds[i] : null;
+            if (playerId.HasValue && (!leavingJoinedRoom || playerId.Value == localId)) humans.Add(row);
+            else if (playerId.HasValue || row.SlotType == 2) open.Add(row);
+            else if (row.SlotType == 1) computers.Add(row);
+            else closed.Add(row);
+        }
+        if (humans.Count == 0)
+        {
+            ParticipantRow human = participants.FirstOrDefault(row => row.SlotType == 0) ?? participants[0];
+            humans.Add(human);
+            open.Remove(human); computers.Remove(human); closed.Remove(human);
+        }
+        List<ParticipantRow> ordered = [.. humans, .. open, .. computers, .. closed];
+        Choice[] countries = gameMode.SelectedIndex == 0 ? GameData.Countries : GameData.YuriCountries;
+        List<LanSlot> slots = ordered.Select((row, index) => new LanSlot(
+            row.SlotType == 2 ? countries[index % countries.Length].Value : row.Country,
+            row.SlotType == 2 ? GameData.Colors[index % GameData.Colors.Length].Value : row.Color,
+            row.SlotType == 2 ? 0 : row.Team,
+            row.SlotType == 2 ? 0 : row.Difficulty,
+            row.Start,
+            row.SlotType == 1,
+            row.SlotType == 3)).ToList();
+        List<LanSlot> active = slots.Where(slot => !slot.Closed).ToList();
+        if (active.Count < 2) throw new InvalidOperationException("至少需要两个未关闭位置。");
+        if (active.Select(slot => slot.Start).Distinct().Count() != active.Count) throw new InvalidOperationException("可用位置的出生点不能重复。");
+        if (active.Select(slot => slot.Color).Distinct().Count() != active.Count) throw new InvalidOperationException("可用位置的颜色不能重复。");
+        GameSpeedChoice speed = (GameSpeedChoice)gameSpeed.SelectedItem!;
+        byte[] mapData = File.ReadAllBytes(map.Path);
+        return new LanGameSetup(gameMode.SelectedIndex == 0, map.Name, Path.GetFileName(map.Path), mapData, LanGameSetup.Hash(mapData), LanCompatibility.ComputeComponentHash(runtime), (int)credits.Value, speed.GameSpeed, speed.MaxGameTicks, crates.Checked, superWeapons.Checked, shortGame.Checked, revealAllMap.Checked, slots);
+    }
+
+    private void StartOwnRoom()
+    {
+        try
+        {
+            LanGameSetup setup = BuildRoomSetup(leavingJoinedRoom: roomClient is not null);
+            int hostRow = rowPlayerIds.FindIndex(id => id == LocalRoomPlayerId);
+            string hostName = hostRow >= 0 && hostRow < participants.Count ? participants[hostRow].Name : config.PlayerName;
+            DisposeRoomNetworking();
+            roomHost = new LanLobbyHost($"{hostName} 的房间", hostName, setup);
+            roomHost.StateChanged += state => Ui(() => ApplyRoomState(state));
+            roomHost.Launching += package => Ui(() => LaunchRoomPackage(package, roomHost?.HostId ?? Guid.Empty, "127.0.0.1"));
+            roomHost.Error += message => Ui(() => roomStatus.Text = message);
+            roomHost.Start();
+        }
+        catch (Exception ex)
+        {
+            roomStatus.Text = $"无法创建房间：{ex.Message}";
+        }
+    }
+
+    private void PublishHostSetup()
+    {
+        if (applyingRoomState || roomHost is null) return;
+        try { roomHost.UpdateSetup(BuildRoomSetup()); }
+        catch (Exception ex) { roomStatus.Text = ex.Message; }
+    }
+
+    private void ApplyRoomState(LanRoomState state)
+    {
+        applyingRoomState = true;
+        try
+        {
+            if (maps.DataSource is IEnumerable<MapInfo> mapItems)
+            {
+                MapInfo? match = mapItems.FirstOrDefault(map => map.Name == state.Setup.MapName);
+                if (match is not null) maps.SelectedItem = match;
+            }
+            gameMode.SelectedIndex = state.Setup.Ra2Mode ? 0 : 1;
+            gameSpeed.SelectedItem = GameData.GameSpeeds.FirstOrDefault(speed => speed.GameSpeed == state.Setup.GameSpeed && speed.MaxGameTicks == state.Setup.MaxGameTicks) ?? gameSpeed.SelectedItem;
+            credits.Value = Math.Clamp(state.Setup.Credits, (int)credits.Minimum, (int)credits.Maximum);
+            crates.Checked = state.Setup.Crates;
+            superWeapons.Checked = state.Setup.SuperWeapons;
+            shortGame.Checked = state.Setup.ShortGame;
+            revealAllMap.Checked = state.Setup.RevealAllMap;
+
+            participants.Clear();
+            rowPlayerIds.Clear();
+            for (int i = 0; i < state.Setup.Slots.Count; i++)
+            {
+                LanSlot slot = state.Setup.Slots[i];
+                LanPlayer? player = i < state.Players.Count ? state.Players[i] : null;
+                int slotType = player is not null ? 0 : slot.Closed ? 3 : slot.Computer ? 1 : 2;
+                participants.Add(new ParticipantRow
+                {
+                    SlotType = slotType,
+                    Name = player?.Name ?? (slotType == 1 ? $"电脑 {i}" : slotType == 2 ? "开放" : "关闭"),
+                    Country = slot.Country,
+                    Color = slot.Color,
+                    Team = slot.Team,
+                    Difficulty = slot.Difficulty,
+                    Start = slot.Start
+                });
+                rowPlayerIds.Add(player?.Id);
+            }
+            grid.Refresh();
+            LanPlayer? local = state.Players.FirstOrDefault(player => player.Id == LocalRoomPlayerId);
+            roomReady.Enabled = state.Players.Count > 1;
+            roomReady.Checked = local?.Ready ?? false;
+            roomReady.Visible = state.Players.Count > 1;
+            bool isHost = roomHost is not null;
+            roomStart.Visible = isHost;
+            roomStart.Enabled = isHost && roomHost!.CanLaunch(out _);
+            SetHostControlsEnabled(isHost);
+            string address = isHost ? LanNetworkAddress.GetPreferredIPv4() : roomClient?.HostAddress ?? "";
+            string role = isHost ? "房主" : "玩家";
+            roomStatus.Text = $"{role}｜{state.RoomName}｜{state.Players.Count}/{state.MaxHumanPlayers} 人｜{address}:{LanLobbyHost.LobbyPort}";
+        }
+        finally { applyingRoomState = false; }
+    }
+
+    private void SetHostControlsEnabled(bool enabled)
+    {
+        gameMode.Enabled = enabled;
+        maps.Enabled = enabled;
+        gameSpeed.Enabled = enabled;
+        credits.Enabled = enabled;
+        crates.Enabled = enabled;
+        superWeapons.Enabled = enabled;
+        shortGame.Enabled = enabled;
+        revealAllMap.Enabled = enabled;
+    }
+
+    private void UpdateLocalRoomPlayer(ParticipantRow row)
+    {
+        if (applyingRoomState || LocalRoomPlayerId == Guid.Empty) return;
+        var slot = new LanSlot(row.Country, row.Color, row.Team, row.Difficulty, row.Start, false);
+        try
+        {
+            if (roomHost is not null) roomHost.UpdateHostPlayer(slot);
+            else if (roomClient is not null) _ = UpdateClientPlayerAsync(slot);
+        }
+        catch (Exception ex) { roomStatus.Text = ex.Message; }
+    }
+
+    private async Task UpdateClientPlayerAsync(LanSlot slot)
+    {
+        try { if (roomClient is not null) await roomClient.UpdatePlayerAsync(slot); }
+        catch (Exception ex) { roomStatus.Text = ex.Message; }
+    }
+
+    private async Task SetRoomReadyAsync()
+    {
+        if (applyingRoomState || !roomReady.Enabled) return;
+        try
+        {
+            if (roomHost is not null) roomHost.SetHostReady(roomReady.Checked);
+            else if (roomClient is not null) await roomClient.SetReadyAsync(roomReady.Checked);
+        }
+        catch (Exception ex) { roomStatus.Text = ex.Message; }
+    }
+
+    private async Task JoinNearbyRoomAsync()
+    {
+        using var browser = new LanRoomBrowserForm();
+        if (browser.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            string playerName = config.PlayerName;
+            int localIndex = rowPlayerIds.FindIndex(id => id == LocalRoomPlayerId);
+            if (localIndex >= 0 && localIndex < participants.Count) playerName = participants[localIndex].Name;
+            DisposeRoomNetworking();
+            var client = new LanLobbyClient();
+            roomClient = client;
+            client.StateChanged += state => Ui(() => ApplyRoomState(state));
+            client.LaunchReceived += package => Ui(() => LaunchRoomPackage(package, client.PlayerId, client.HostAddress));
+            client.Error += message => Ui(() => roomStatus.Text = message);
+            roomStatus.Text = $"正在连接 {browser.SelectedAddress}:{LanLobbyHost.LobbyPort}…";
+            await client.ConnectAsync(browser.SelectedAddress, playerName);
+        }
+        catch (Exception ex)
+        {
+            roomStatus.Text = $"加入失败：{ex.Message}";
+            StartOwnRoom();
+        }
+    }
+
+    private async Task StartRoomGameAsync()
+    {
+        if (roomHost is null) return;
+        try
+        {
+            if (roomHost.CurrentState.Players.Count == 1)
+            {
+                Generate(false);
+                StartGameProcess(loadSave: false);
+                status.Text = "单机游戏已启动";
+            }
+            else await roomHost.LaunchAsync();
+        }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "无法开始", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private void LaunchRoomPackage(LanLaunchPackage package, Guid localId, string hostAddress)
+    {
+        if (startingRoom) return;
+        startingRoom = true;
+        try
+        {
+            string runtime = runtimePath.Text.Trim();
+            if (localId == Guid.Empty) throw new InvalidOperationException("尚未收到本机玩家编号。");
+            if (!string.Equals(LanCompatibility.ComputeComponentHash(runtime), package.Setup.ComponentHash, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("本机的联机组件与房主不一致。");
+            IniFileEditor.ConfigureCncDdraw(runtime, package.Setup.MaxGameTicks);
+            SpawnWriter.WriteLan(runtime, package, localId, hostAddress);
+            StartGameProcess(loadSave: false);
+            status.Text = "联机配置已同步，游戏正在启动";
+        }
+        catch (Exception ex)
+        {
+            startingRoom = false;
+            MessageBox.Show(ex.Message, "联机启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void Ui(Action action)
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired) BeginInvoke(action); else action();
+    }
+
+    private void DisposeRoomNetworking()
+    {
+        roomClient?.Dispose();
+        roomHost?.Dispose();
+        roomClient = null;
+        roomHost = null;
+        startingRoom = false;
     }
 }
