@@ -2,9 +2,10 @@ namespace Ra2ModeLauncher;
 
 internal sealed class LauncherShellForm : Form
 {
-    private readonly Panel pageHost = new() { Dock = DockStyle.Fill };
-    private readonly HomeForm homePage = new();
-    private MainForm? roomPage;
+    private readonly SplitContainer workspace = new() { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, FixedPanel = FixedPanel.Panel1, SplitterWidth = 6 };
+    private readonly HomeForm lobbyPanel = new();
+    private readonly Panel roomHost = new() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(241, 243, 246) };
+    private MainForm? roomPanel;
 
     public LauncherShellForm()
     {
@@ -15,65 +16,78 @@ internal sealed class LauncherShellForm : Form
         BackColor = Color.FromArgb(246, 247, 249);
         AutoScaleMode = AutoScaleMode.Dpi;
         Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
-        Width = Math.Clamp((int)(area.Width * 0.78), 1040, 1280);
-        Height = Math.Clamp((int)(area.Height * 0.82), 720, 900);
-        MinimumSize = new Size(960, 680);
+        Width = Math.Clamp((int)(area.Width * 0.90), 1380, 1800);
+        Height = Math.Clamp((int)(area.Height * 0.88), 760, 950);
+        MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
-        Controls.Add(pageHost);
-        homePage.OpenRoomRequested += ShowRoom;
+
+        Controls.Add(workspace);
+        workspace.Panel1.Padding = new Padding(0, 0, 3, 0);
+        workspace.Panel2.Padding = new Padding(3, 0, 0, 0);
+        workspace.Panel2.Controls.Add(roomHost);
+        AttachEmbeddedForm(lobbyPanel, workspace.Panel1);
+        ShowRoomPlaceholder();
+        lobbyPanel.OpenRoomRequested += ShowRoom;
+        Load += (_, _) => workspace.SplitterDistance = Math.Clamp((int)(ClientSize.Width * 0.34), 460, 580);
         FormClosing += (_, e) => StartupTrace.Mark($"shell closing reason={e.CloseReason}");
         FormClosed += (_, _) =>
         {
             StartupTrace.Mark("shell closed");
-            roomPage?.Dispose();
-            if (!homePage.IsDisposed) homePage.Dispose();
+            roomPanel?.Dispose();
+            if (!lobbyPanel.IsDisposed) lobbyPanel.Dispose();
         };
-        ShowHome();
         StartupTrace.Mark("shell constructor finished");
     }
 
     private void ShowRoom(RoomEntry entry)
     {
-        roomPage?.Dispose();
-        roomPage = new MainForm(entry);
-        roomPage.ReturnHomeRequested += RequestShowHome;
-        Text = entry.Mode == RoomEntryMode.Create ? $"房间：{entry.RoomName}" : $"正在加入：{entry.HostAddress}";
-        ShowPage(roomPage);
+        roomPanel?.Dispose();
+        roomHost.Controls.Clear();
+        roomPanel = new MainForm(entry);
+        roomPanel.ReturnHomeRequested += RequestLeaveRoom;
+        AttachEmbeddedForm(roomPanel, roomHost);
+        Text = entry.Mode == RoomEntryMode.Create ? $"红色警戒 2——{entry.RoomName}" : $"红色警戒 2——正在加入 {entry.HostAddress}";
     }
 
-    private void ShowHome()
+    private void RequestLeaveRoom()
     {
-        StartupTrace.Mark("show home requested");
-        if (roomPage is not null)
+        if (!IsDisposed && IsHandleCreated) BeginInvoke(LeaveRoom);
+    }
+
+    private void LeaveRoom()
+    {
+        if (roomPanel is not null)
         {
-            roomPage.ReturnHomeRequested -= RequestShowHome;
-            roomPage.Dispose();
-            roomPage = null;
+            roomPanel.ReturnHomeRequested -= RequestLeaveRoom;
+            roomPanel.Dispose();
+            roomPanel = null;
         }
-        Text = "红色警戒 2 / 尤里的复仇——局域网大厅";
-        homePage.RefreshAfterRoom();
-        ShowPage(homePage);
-        StartupTrace.Mark("home attached");
+        roomHost.Controls.Clear();
+        ShowRoomPlaceholder();
+        lobbyPanel.RefreshAfterRoom();
+        Text = "红色警戒 2 / 尤里的复仇启动器";
     }
 
-    private void RequestShowHome()
+    private void ShowRoomPlaceholder()
     {
-        if (!IsDisposed && IsHandleCreated) BeginInvoke(ShowHome);
-    }
-
-    private void ShowPage(Form page)
-    {
-        pageHost.SuspendLayout();
-        foreach (Control control in pageHost.Controls.Cast<Control>().ToArray())
+        var message = new Label
         {
-            pageHost.Controls.Remove(control);
-            control.Hide();
-        }
-        page.TopLevel = false;
-        page.FormBorderStyle = FormBorderStyle.None;
-        page.Dock = DockStyle.Fill;
-        pageHost.Controls.Add(page);
-        page.Show();
-        pageHost.ResumeLayout(true);
+            Dock = DockStyle.Fill,
+            Text = "当前未进入房间\r\n\r\n请在左侧创建房间，或选择一个局域网对局加入。",
+            TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = Color.DimGray,
+            Font = new Font(Font.FontFamily, 12f)
+        };
+        roomHost.Controls.Add(message);
+    }
+
+    private static void AttachEmbeddedForm(Form form, Control host)
+    {
+        form.TopLevel = false;
+        form.FormBorderStyle = FormBorderStyle.None;
+        form.MinimumSize = Size.Empty;
+        form.Dock = DockStyle.Fill;
+        host.Controls.Add(form);
+        form.Show();
     }
 }

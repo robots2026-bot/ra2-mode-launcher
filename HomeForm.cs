@@ -51,46 +51,46 @@ internal sealed class HomeForm : Form
 
     private void BuildLayout()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(18, 14, 18, 12), ColumnCount = 1, RowCount = 5 };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var heading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 0, 0, 10) };
-        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var title = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-        title.Controls.Add(new Label { Text = "局域网对局", AutoSize = true, Font = new Font(Font.FontFamily, 15f, FontStyle.Bold) });
-        title.Controls.Add(new Label { Text = "自动发现同一局域网中的房间；选中后可查看地图与规则。", AutoSize = true, ForeColor = Color.DimGray });
-        heading.Controls.Add(title, 0, 0); heading.SetColumnSpan(title, 2); root.Controls.Add(heading, 0, 0);
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12, 10, 9, 10), ColumnCount = 1, RowCount = 6 };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 42)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 58)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var title = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0, 0, 0, 7) };
+        title.Controls.Add(new Label { Text = "局域网大厅", AutoSize = true, Font = new Font(Font.FontFamily, 13f, FontStyle.Bold) });
+        title.Controls.Add(new Label { Text = "房间列表与右侧当前房间同时显示", AutoSize = true, ForeColor = Color.DimGray });
+        root.Controls.Add(title, 0, 0);
 
-        var createBar = new GroupBox { Text = "创建或直接加入", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10), Margin = new Padding(0, 0, 0, 9) };
-        var createActions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
-        Button create = new() { Text = "创建房间", AutoSize = true, Height = 34, BackColor = Color.FromArgb(164, 38, 44), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+        var createBar = new GroupBox { Text = "创建房间", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(8), Margin = new Padding(0, 0, 0, 7) };
+        var createGrid = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 2 };
+        createGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); createGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); createGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        Button create = new() { Text = "创建", AutoSize = true, Height = 32, BackColor = Color.FromArgb(164, 38, 44), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
         create.FlatAppearance.BorderSize = 0; create.Click += (_, _) => OpenCreatedRoom();
-        Button manualJoin = new() { Text = "手动连接…", AutoSize = true, Height = 32 }; manualJoin.Click += (_, _) => OpenDirectRoom();
-        createActions.Controls.AddRange([new Label { Text = "房间名称", AutoSize = true, Padding = new Padding(0, 7, 2, 0) }, roomName, create, manualJoin, new Label { Text = $"本机 {DisplayAddress()}  ·  UDP {LanLobbyHost.DiscoveryPort} / TCP {LanLobbyHost.LobbyPort}", AutoSize = true, ForeColor = Color.DimGray, Padding = new Padding(16, 7, 0, 0) }]);
-        createBar.Controls.Add(createActions); root.Controls.Add(createBar, 0, 1);
+        createGrid.Controls.Add(new Label { Text = "名称", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 7, 6, 0) }, 0, 0); createGrid.Controls.Add(roomName, 1, 0); createGrid.Controls.Add(create, 2, 0);
+        Button manualJoin = new() { Text = "手动连接…", AutoSize = true, Height = 28 }; manualJoin.Click += (_, _) => OpenDirectRoom();
+        createGrid.Controls.Add(new Label { Text = $"{DisplayAddress()}  ·  UDP {LanLobbyHost.DiscoveryPort} / TCP {LanLobbyHost.LobbyPort}", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 7, 4, 0) }, 0, 1); createGrid.SetColumnSpan(createGrid.GetControlFromPosition(0, 1)!, 2); createGrid.Controls.Add(manualJoin, 2, 1);
+        createBar.Controls.Add(createGrid); root.Controls.Add(createBar, 0, 1);
 
-        var lobby = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterDistance = 580, Margin = new Padding(0, 0, 0, 9) };
-        var listBox = new GroupBox { Text = "可用对局（自动刷新）", Dock = DockStyle.Fill, Padding = new Padding(9) };
-        rooms.Columns.Add("房间", 155); rooms.Columns.Add("房主", 90); rooms.Columns.Add("模式", 78); rooms.Columns.Add("地图", MapColumnWidth); rooms.Columns.Add("人数", 60); rooms.Columns.Add("状态", 70);
-        rooms.ColumnWidthChanging += (_, e) => { if (e.ColumnIndex == 3) { e.NewWidth = MapColumnWidth; e.Cancel = true; } };
+        var listBox = new GroupBox { Text = "可用对局（自动刷新）", Dock = DockStyle.Fill, Padding = new Padding(7), Margin = new Padding(0, 0, 0, 7) };
+        rooms.Columns.Add("房间", 135); rooms.Columns.Add("地图", MapColumnWidth); rooms.Columns.Add("人数", 55); rooms.Columns.Add("状态", 62);
+        rooms.ColumnWidthChanging += (_, e) => { if (e.ColumnIndex == 1) { e.NewWidth = MapColumnWidth; e.Cancel = true; } };
         rooms.SelectedIndexChanged += (_, _) => ShowSelectedRoom(); rooms.DoubleClick += (_, _) => JoinSelectedRoom();
-        listBox.Controls.Add(rooms); lobby.Panel1.Controls.Add(listBox);
-        var infoBox = new GroupBox { Text = "选中对局信息", Dock = DockStyle.Fill, Padding = new Padding(9) };
-        var info = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1 };
-        info.RowStyles.Add(new RowStyle(SizeType.Percent, 58)); info.RowStyles.Add(new RowStyle(SizeType.Percent, 42)); info.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var previewBorder = new Panel { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(3) }; previewBorder.Controls.Add(mapPreview);
-        info.Controls.Add(previewBorder, 0, 0); info.Controls.Add(roomDetails, 0, 1);
+        listBox.Controls.Add(rooms); root.Controls.Add(listBox, 0, 2);
+
+        var infoBox = new GroupBox { Text = "选中对局", Dock = DockStyle.Fill, Padding = new Padding(7), Margin = new Padding(0, 0, 0, 7) };
+        var info = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 2 };
+        info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44)); info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56)); info.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); info.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var previewBorder = new Panel { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(3), Margin = new Padding(0, 0, 5, 3) }; previewBorder.Controls.Add(mapPreview);
+        info.Controls.Add(previewBorder, 0, 0); info.Controls.Add(roomDetails, 1, 0);
         joinSelected.Click += (_, _) => JoinSelectedRoom();
         var joinRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
-        joinRow.Controls.Add(joinSelected); joinRow.Controls.Add(playerName); joinRow.Controls.Add(new Label { Text = "玩家名称", AutoSize = true, Padding = new Padding(0, 7, 3, 0) }); info.Controls.Add(joinRow, 0, 2);
-        infoBox.Controls.Add(info); lobby.Panel2.Controls.Add(infoBox); root.Controls.Add(lobby, 0, 2);
+        joinRow.Controls.Add(joinSelected); joinRow.Controls.Add(playerName); joinRow.Controls.Add(new Label { Text = "玩家名称", AutoSize = true, Padding = new Padding(0, 7, 3, 0) }); info.Controls.Add(joinRow, 0, 1); info.SetColumnSpan(joinRow, 2);
+        infoBox.Controls.Add(info); root.Controls.Add(infoBox, 0, 3);
 
-        var saveBox = new GroupBox { Text = "本地存档", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(9) };
+        var saveBox = new GroupBox { Text = "本地存档", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(7) };
         var saveGrid = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3 };
         saveGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); saveGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); saveGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         Button refresh = new() { Text = "刷新", AutoSize = true }; refresh.Click += (_, _) => ReloadSaves();
         Button load = new() { Text = "加载存档", AutoSize = true }; load.Click += (_, _) => LoadSelectedSave();
-        saveGrid.Controls.Add(savedGames, 0, 0); saveGrid.Controls.Add(refresh, 1, 0); saveGrid.Controls.Add(load, 2, 0); saveBox.Controls.Add(saveGrid); root.Controls.Add(saveBox, 0, 3);
-        status.Text = "正在搜索局域网房间…"; status.Padding = new Padding(0, 6, 0, 0); root.Controls.Add(status, 0, 4); Controls.Add(root);
+        saveGrid.Controls.Add(savedGames, 0, 0); saveGrid.Controls.Add(refresh, 1, 0); saveGrid.Controls.Add(load, 2, 0); saveBox.Controls.Add(saveGrid); root.Controls.Add(saveBox, 0, 4);
+        status.Text = "正在搜索局域网房间…"; status.Padding = new Padding(0, 4, 0, 0); root.Controls.Add(status, 0, 5); Controls.Add(root);
     }
 
     private string DisplayAddress() { string address = LanNetworkAddress.GetPreferredIPv4(); return string.IsNullOrWhiteSpace(address) ? "未检测到 IPv4" : address; }
@@ -121,7 +121,7 @@ internal sealed class HomeForm : Form
         {
             LanRoomAnnouncement value = seen.Room.Announcement;
             var item = new ListViewItem(value.RoomName) { Name = key, Tag = seen.Room };
-            item.SubItems.Add(value.HostName); item.SubItems.Add(value.Ra2Mode ? "红警2" : "尤里"); item.SubItems.Add(value.MapName); item.SubItems.Add($"{value.Players}/{value.Capacity}"); item.SubItems.Add(value.OpenSlots > 0 ? value.Status : "已满");
+            item.SubItems.Add(value.MapName); item.SubItems.Add($"{value.Players}/{value.Capacity}"); item.SubItems.Add(value.OpenSlots > 0 ? value.Status : "已满");
             rooms.Items.Add(item); if (key == selectKey) item.Selected = true;
         }
         rooms.EndUpdate();
