@@ -31,6 +31,7 @@ internal sealed class MainForm : Form
     private bool applyingRoomState;
     private bool startingRoom;
     private bool localRoomReady;
+    public event Action? ReturnHomeRequested;
 
     public MainForm(RoomEntry entry)
     {
@@ -260,7 +261,7 @@ internal sealed class MainForm : Form
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
         roomStart.FlatAppearance.BorderSize = 0;
-        Button leave = new() { Text = "退出房间", AutoSize = true, Height = 36 }; leave.Click += (_, _) => Close();
+        Button leave = new() { Text = "返回大厅", AutoSize = true, Height = 36 }; leave.Click += (_, _) => ReturnHomeRequested?.Invoke();
         Button prepare = new() { Text = "仅保存配置", AutoSize = true, Height = 36 }; prepare.Click += (_, _) => Generate(false);
         roomStatus.Padding = new Padding(0, 9, 12, 0);
         actions.Controls.AddRange([roomStart, roomReady, leave, prepare, roomStatus, status]);
@@ -673,7 +674,7 @@ internal sealed class MainForm : Form
         {
             roomStatus.Text = $"加入失败：{ex.Message}";
             MessageBox.Show(ex.Message, "无法加入房间", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            Close();
+            ReturnHomeRequested?.Invoke();
         }
     }
 
@@ -728,5 +729,11 @@ internal sealed class MainForm : Form
         roomClient = null;
         roomHost = null;
         startingRoom = false;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) DisposeRoomNetworking();
+        base.Dispose(disposing);
     }
 }

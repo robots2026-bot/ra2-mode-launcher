@@ -10,7 +10,7 @@ internal static class Program
         StartupTrace.Mark("application initialized");
         try
         {
-            Application.Run(new HomeForm());
+            Application.Run(new LauncherShellForm());
         }
         catch (Exception ex)
         {

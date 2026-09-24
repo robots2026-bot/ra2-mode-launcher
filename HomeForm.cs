@@ -22,6 +22,8 @@ internal sealed class HomeForm : Form
     private readonly List<MapInfo> localMaps;
     private readonly LanDiscoveryService discovery;
     private string? localComponentHash;
+    private bool discoveryDisposed;
+    public event Action<RoomEntry>? OpenRoomRequested;
 
     public HomeForm()
     {
@@ -45,7 +47,6 @@ internal sealed class HomeForm : Form
         discovery.RoomFound += room => Ui(() => AddOrUpdateRoom(room));
         expiryTimer.Tick += (_, _) => ExpireRooms();
         expiryTimer.Start();
-        FormClosed += (_, _) => { expiryTimer.Dispose(); discovery.Dispose(); };
     }
 
     private void BuildLayout()
@@ -195,9 +196,13 @@ internal sealed class HomeForm : Form
 
     private void OpenRoom(RoomEntry entry)
     {
-        Hide();
-        try { using var room = new MainForm(entry); room.ShowDialog(); }
-        finally { Show(); Activate(); ReloadSaves(); }
+        OpenRoomRequested?.Invoke(entry);
+    }
+
+    public void RefreshAfterRoom()
+    {
+        ReloadSaves();
+        ExpireRooms();
     }
 
     private void ReloadSaves()
@@ -221,4 +226,15 @@ internal sealed class HomeForm : Form
     }
 
     private void Ui(Action action) { if (IsDisposed || !IsHandleCreated) return; if (InvokeRequired) BeginInvoke(action); else action(); }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !discoveryDisposed)
+        {
+            discoveryDisposed = true;
+            expiryTimer.Dispose();
+            discovery.Dispose();
+        }
+        base.Dispose(disposing);
+    }
 }
