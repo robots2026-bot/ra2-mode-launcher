@@ -23,6 +23,12 @@ internal sealed class HomeForm : Form
     private readonly LanDiscoveryService discovery;
     private string? localComponentHash;
     private bool discoveryDisposed;
+    private bool roomActive;
+    public void SetRoomActive(bool active)
+    {
+        roomActive = active;
+        savedGames.Enabled = !active;
+    }
     public event Action<RoomEntry>? OpenRoomRequested;
 
     public HomeForm()
@@ -69,7 +75,7 @@ internal sealed class HomeForm : Form
         createBar.Controls.Add(createGrid); root.Controls.Add(createBar, 0, 1);
 
         var listBox = new GroupBox { Text = "可用对局（自动刷新）", Dock = DockStyle.Fill, Padding = new Padding(7), Margin = new Padding(0, 0, 0, 7) };
-        rooms.Columns.Add("房间", 135); rooms.Columns.Add("地图", MapColumnWidth); rooms.Columns.Add("人数", 55); rooms.Columns.Add("状态", 62);
+        rooms.Columns.Add("房间", 100); rooms.Columns.Add("地图", MapColumnWidth); rooms.Columns.Add("人数", 45); rooms.Columns.Add("状态", 52);
         rooms.ColumnWidthChanging += (_, e) => { if (e.ColumnIndex == 1) { e.NewWidth = MapColumnWidth; e.Cancel = true; } };
         rooms.SelectedIndexChanged += (_, _) => ShowSelectedRoom(); rooms.DoubleClick += (_, _) => JoinSelectedRoom();
         listBox.Controls.Add(rooms); root.Controls.Add(listBox, 0, 2);
@@ -99,7 +105,9 @@ internal sealed class HomeForm : Form
     {
         string key = $"{room.Address}:{LanLobbyHost.LobbyPort}";
         string? selectedKey = SelectedRoomKey();
+        bool unchanged = discovered.TryGetValue(key, out RoomSeen? previous) && previous.Room == room;
         discovered[key] = new RoomSeen(room, DateTime.UtcNow);
+        if (unchanged) return;
         RebuildRoomList(selectedKey ?? key);
     }
 
@@ -214,6 +222,7 @@ internal sealed class HomeForm : Form
 
     private void LoadSelectedSave()
     {
+        if (roomActive) { MessageBox.Show("请先离开当前房间，再加载本地存档。"); return; }
         try
         {
             if (savedGames.SelectedItem is not SaveInfo save) throw new InvalidOperationException("没有可加载的 .SAV 存档。");

@@ -186,7 +186,16 @@ internal sealed class LanLobbyHost : IDisposable
             lock (gate)
             {
                 peers.Remove(id);
-                players.RemoveAll(p => p.Id == id);
+                int departed = players.FindIndex(p => p.Id == id);
+                if (departed >= 0)
+                {
+                    // Keep surviving players paired with their own slots; move the vacant slot after them.
+                    LanSlot vacant = setup.Slots[departed];
+                    setup.Slots.RemoveAt(departed);
+                    players.RemoveAt(departed);
+                    setup.Slots.Insert(players.Count, vacant);
+                    for (int i = 0; i < players.Count; i++) players[i] = players[i] with { Ready = false };
+                }
             }
             client.Dispose();
             if (!stop.IsCancellationRequested) await BroadcastStateAsync();

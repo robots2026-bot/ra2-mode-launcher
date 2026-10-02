@@ -228,8 +228,9 @@ internal sealed class MainForm : Form
         root.Controls.Add(heading, 0, 0);
         root.Controls.Add(advanced, 0, 1);
 
-        var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 0, 0, 8) };
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40)); content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 0, 0, 8) };
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        content.RowStyles.Add(new RowStyle(SizeType.Percent, 55)); content.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
 
         var battlefieldBox = new GroupBox { Text = "1  选择战场", Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 12), Margin = new Padding(0, 0, 6, 0) };
         var battlefield = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3 };
@@ -241,11 +242,11 @@ internal sealed class MainForm : Form
         previewBox.Controls.Add(mapPreview);
         battlefield.Controls.Add(previewBox, 0, 2); battlefield.SetColumnSpan(previewBox, 2);
         battlefieldBox.Controls.Add(battlefield);
-        content.Controls.Add(battlefieldBox, 0, 0);
+        content.Controls.Add(battlefieldBox, 0, 1);
 
         var participantsBox = new GroupBox { Text = "2  游戏位置（由地图容量决定）", Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 12), Margin = new Padding(6, 0, 0, 0) };
         participantsBox.Controls.Add(grid);
-        content.Controls.Add(participantsBox, 1, 0);
+        content.Controls.Add(participantsBox, 0, 0);
         root.Controls.Add(content, 0, 2);
 
         var mapVisibilityTip = new ToolTip();
@@ -261,10 +262,9 @@ internal sealed class MainForm : Form
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
         roomStart.FlatAppearance.BorderSize = 0;
-        Button leave = new() { Text = "返回大厅", AutoSize = true, Height = 36 }; leave.Click += (_, _) => ReturnHomeRequested?.Invoke();
-        Button prepare = new() { Text = "仅保存配置", AutoSize = true, Height = 36 }; prepare.Click += (_, _) => Generate(false);
+        Button leave = new() { Text = "离开房间", AutoSize = true, Height = 36 }; leave.Click += (_, _) => ReturnHomeRequested?.Invoke();
         roomStatus.Padding = new Padding(0, 9, 12, 0);
-        actions.Controls.AddRange([roomStart, roomReady, leave, prepare, roomStatus, status]);
+        actions.Controls.AddRange([roomStart, roomReady, leave, roomStatus, status]);
         root.Controls.Add(actions, 0, 4);
         Controls.Add(root);
     }
@@ -479,6 +479,44 @@ internal sealed class MainForm : Form
             UseShellExecute = true
         };
         Process.Start(psi);
+        startingRoom = true;
+        roomStart.Enabled = false;
+        _ = ObserveGameExitAsync(runtime);
+    }
+
+    private async Task ObserveGameExitAsync(string runtime)
+    {
+        // Syringe is only the injector; wait for the actual game process instead.
+        Process? game = null;
+        try
+        {
+            for (int attempt = 0; attempt < 60 && !IsDisposed; attempt++)
+            {
+                await Task.Delay(500);
+                foreach (Process candidate in Process.GetProcessesByName("gamemd-spawn"))
+                {
+                    bool matches = false;
+                    try { matches = string.Equals(candidate.MainModule?.FileName, Path.Combine(runtime, "gamemd-spawn.exe"), StringComparison.OrdinalIgnoreCase); }
+                    catch { }
+                    if (matches) { game = candidate; break; }
+                    candidate.Dispose();
+                }
+                if (game is not null) break;
+            }
+            if (game is null)
+            {
+                if (!IsDisposed) status.Text = "未检测到游戏进程，请检查启动日志。";
+                return;
+            }
+            await game.WaitForExitAsync();
+            if (!IsDisposed) { status.Text = "游戏已退出，可以重新准备并开始。"; await SetRoomReadyAsync(false); }
+        }
+        catch (Exception ex) { if (!IsDisposed) status.Text = $"游戏状态检测失败：{ex.Message}"; }
+        finally
+        {
+            game?.Dispose();
+            if (!IsDisposed) { startingRoom = false; roomStart.Enabled = roomHost is not null && roomHost.CanLaunch(out _); }
+        }
     }
 
     private Guid LocalRoomPlayerId => roomHost?.HostId ?? roomClient?.PlayerId ?? Guid.Empty;
@@ -606,11 +644,12 @@ internal sealed class MainForm : Form
             roomReady.Visible = state.Players.Count > 1;
             bool isHost = roomHost is not null;
             roomStart.Visible = isHost;
-            roomStart.Enabled = isHost && roomHost!.CanLaunch(out _);
+            string launchReason = "";
+            roomStart.Enabled = isHost && !startingRoom && roomHost!.CanLaunch(out launchReason);
             SetHostControlsEnabled(isHost);
             string address = isHost ? LanNetworkAddress.GetPreferredIPv4() : roomClient?.HostAddress ?? "";
             string role = isHost ? "房主" : "玩家";
-            roomStatus.Text = $"{role}｜{state.RoomName}｜{state.Players.Count}/{state.MaxHumanPlayers} 人｜{address}:{LanLobbyHost.LobbyPort}";
+            roomStatus.Text = $"{role}｜{state.RoomName}｜{state.Players.Count}/{state.MaxHumanPlayers} 人｜{address}:{LanLobbyHost.LobbyPort}" + (launchReason.Length > 0 ? $"｜{launchReason}" : "");
         }
         finally { applyingRoomState = false; }
     }

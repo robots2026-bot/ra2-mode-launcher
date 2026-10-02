@@ -16,9 +16,9 @@ internal sealed class LauncherShellForm : Form
         BackColor = Color.FromArgb(246, 247, 249);
         AutoScaleMode = AutoScaleMode.Dpi;
         Rectangle area = Screen.FromPoint(Cursor.Position).WorkingArea;
-        Width = Math.Clamp((int)(area.Width * 0.90), 1380, 1800);
-        Height = Math.Clamp((int)(area.Height * 0.88), 760, 950);
-        MinimumSize = new Size(1280, 720);
+        Width = Math.Min(area.Width, Math.Clamp((int)(area.Width * 0.94), 1280, 1800));
+        Height = Math.Min(area.Height, Math.Clamp((int)(area.Height * 0.90), 720, 950));
+        MinimumSize = new Size(Math.Min(area.Width, 1280), Math.Min(area.Height, 720));
         StartPosition = FormStartPosition.CenterScreen;
 
         Controls.Add(workspace);
@@ -28,7 +28,7 @@ internal sealed class LauncherShellForm : Form
         AttachEmbeddedForm(lobbyPanel, workspace.Panel1);
         ShowRoomPlaceholder();
         lobbyPanel.OpenRoomRequested += ShowRoom;
-        Load += (_, _) => workspace.SplitterDistance = Math.Clamp((int)(ClientSize.Width * 0.34), 460, 580);
+        Load += (_, _) => { workspace.SplitterDistance = 460; workspace.Panel1MinSize = 440; workspace.Panel2MinSize = Math.Min(700, ClientSize.Width - 466); };
         FormClosing += (_, e) => StartupTrace.Mark($"shell closing reason={e.CloseReason}");
         FormClosed += (_, _) =>
         {
@@ -41,11 +41,14 @@ internal sealed class LauncherShellForm : Form
 
     private void ShowRoom(RoomEntry entry)
     {
+        if (roomPanel is not null && entry.Mode == RoomEntryMode.Join && entry.HostAddress == LanNetworkAddress.GetPreferredIPv4()) { MessageBox.Show(this, "已经在本机房间中，无需再次加入。"); return; }
+        if (roomPanel is not null && MessageBox.Show(this, "切换房间会离开当前房间，是否继续？", "切换房间", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         roomPanel?.Dispose();
         roomHost.Controls.Clear();
         roomPanel = new MainForm(entry);
         roomPanel.ReturnHomeRequested += RequestLeaveRoom;
         AttachEmbeddedForm(roomPanel, roomHost);
+        lobbyPanel.SetRoomActive(true);
         Text = entry.Mode == RoomEntryMode.Create ? $"红色警戒 2——{entry.RoomName}" : $"红色警戒 2——正在加入 {entry.HostAddress}";
     }
 
@@ -65,6 +68,7 @@ internal sealed class LauncherShellForm : Form
         roomHost.Controls.Clear();
         ShowRoomPlaceholder();
         lobbyPanel.RefreshAfterRoom();
+        lobbyPanel.SetRoomActive(false);
         Text = "红色警戒 2 / 尤里的复仇启动器";
     }
 
