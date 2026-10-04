@@ -25,12 +25,7 @@ internal sealed class LauncherShellForm : Form
         Controls.Add(workspace);
         workspace.Panel1.Padding = new Padding(0, 0, 3, 0);
         workspace.Panel2.Padding = new Padding(3, 0, 0, 0);
-        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 62)); right.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
-        right.Controls.Add(roomHost, 0, 0);
-        var previewBox = new GroupBox { Text = "共享地图 · 进入房间后固定显示当前地图", Dock = DockStyle.Fill, Padding = new Padding(8) };
-        previewBox.Controls.Add(sharedPreview); right.Controls.Add(previewBox, 0, 1);
-        workspace.Panel2.Controls.Add(right);
+        workspace.Panel2.Controls.Add(roomHost);
         lobbyPanel.PreviewRequested += map => { if (roomPanel is null) { sharedPreview.Map = map; sharedPreview.SetPlayers([]); } };
         AttachEmbeddedForm(lobbyPanel, workspace.Panel1);
         ShowRoomPlaceholder();
@@ -40,7 +35,9 @@ internal sealed class LauncherShellForm : Form
         FormClosed += (_, _) =>
         {
             StartupTrace.Mark("shell closed");
+            sharedPreview.Parent?.Controls.Remove(sharedPreview);
             roomPanel?.Dispose();
+            sharedPreview.Dispose();
             if (!lobbyPanel.IsDisposed) lobbyPanel.Dispose();
         };
         StartupTrace.Mark("shell constructor finished");
@@ -50,6 +47,7 @@ internal sealed class LauncherShellForm : Form
     {
         if (roomPanel is not null && entry.Mode == RoomEntryMode.Join && entry.HostAddress == LanNetworkAddress.GetPreferredIPv4()) { MessageBox.Show(this, "已经在本机房间中，无需再次加入。"); return; }
         if (roomPanel is not null && MessageBox.Show(this, "切换房间会离开当前房间，是否继续？", "切换房间", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        sharedPreview.Parent?.Controls.Remove(sharedPreview);
         roomPanel?.Dispose();
         roomHost.Controls.Clear();
         roomPanel = new MainForm(entry, sharedPreview);
@@ -69,6 +67,7 @@ internal sealed class LauncherShellForm : Form
         if (roomPanel is not null)
         {
             roomPanel.ReturnHomeRequested -= RequestLeaveRoom;
+            sharedPreview.Parent?.Controls.Remove(sharedPreview);
             roomPanel.Dispose();
             roomPanel = null;
         }
@@ -92,7 +91,10 @@ internal sealed class LauncherShellForm : Form
             ForeColor = Color.DimGray,
             Font = new Font(Font.FontFamily, 12f)
         };
-        roomHost.Controls.Add(message);
+        var idle = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        idle.RowStyles.Add(new RowStyle(SizeType.Absolute, 90)); idle.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        idle.Controls.Add(message, 0, 0); idle.Controls.Add(sharedPreview, 0, 1);
+        roomHost.Controls.Add(idle);
     }
 
     private static void AttachEmbeddedForm(Form form, Control host)

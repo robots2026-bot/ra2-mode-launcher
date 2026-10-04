@@ -204,8 +204,8 @@ internal sealed class MainForm : Form
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16, 14, 16, 12), ColumnCount = 1, RowCount = 5 };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 330));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         var heading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 0, 0, 8) };
@@ -223,11 +223,16 @@ internal sealed class MainForm : Form
         root.Controls.Add(heading, 0, 0);
         root.Controls.Add(advanced, 0, 1);
 
-        var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 0, 0, 8) };
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        content.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 6, 0, 8) };
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        content.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var previewBox = new GroupBox { Text = "地图预览 · 点击编号选择自己的出生点", Dock = DockStyle.Fill, Padding = new Padding(8), Margin = new Padding(0, 0, 8, 0) };
+        previewBox.Controls.Add(mapPreview); content.Controls.Add(previewBox, 0, 0);
+        var settingsScroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+        var settings = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 2 };
+        settingsScroll.Controls.Add(settings); content.Controls.Add(settingsScroll, 1, 0);
 
-        var battlefieldBox = new GroupBox { Text = "1  选择战场", Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 12), Margin = new Padding(0, 0, 6, 0) };
+        var battlefieldBox = new GroupBox { Text = "地图与模式", Dock = DockStyle.Top, Padding = new Padding(10), Margin = new Padding(0, 0, 0, 6) };
         var battlefield = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3 };
         battlefield.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); battlefield.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         battlefield.RowStyles.Add(new RowStyle(SizeType.AutoSize)); battlefield.RowStyles.Add(new RowStyle(SizeType.AutoSize)); battlefield.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -236,30 +241,37 @@ internal sealed class MainForm : Form
         battlefield.AutoSize = true;
         battlefieldBox.AutoSize = true;
         battlefieldBox.Controls.Add(battlefield);
-        content.Controls.Add(battlefieldBox, 0, 1);
+        settings.Controls.Add(battlefieldBox, 0, 0);
 
-        var participantsBox = new GroupBox { Text = "2  游戏位置（由地图容量决定）", Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 12), Margin = new Padding(6, 0, 0, 0) };
+        var participantsBox = new GroupBox { Text = "玩家与出生位置", Dock = DockStyle.Fill, Padding = new Padding(8), Margin = Padding.Empty };
         participantsBox.Controls.Add(grid);
-        content.Controls.Add(participantsBox, 0, 0);
-        root.Controls.Add(content, 0, 2);
+        root.Controls.Add(participantsBox, 0, 2);
+        root.Controls.Add(content, 0, 3);
 
         var mapVisibilityTip = new ToolTip();
         mapVisibilityTip.SetToolTip(revealAllMap, "开局揭示整张地图，移除初始黑幕。");
 
-        var rulesBox = new GroupBox { Text = "3  游戏规则与显示", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(10) };
-        var rules = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
-        rules.Controls.AddRange([new Label { Text = "分辨率", AutoSize = true, Padding = new Padding(0, 6, 2, 0) }, resolution,
-            new Label { Text = "游戏速度", AutoSize = true, Padding = new Padding(12, 6, 2, 0) }, gameSpeed,
-            new Label { Text = "初始资金", AutoSize = true, Padding = new Padding(12, 6, 2, 0) }, credits, crates, superWeapons, shortGame, revealAllMap]);
+        var rulesBox = new GroupBox { Text = "规则与显示", Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10) };
+        var rules = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 7 };
+        rules.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); rules.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        AddSetting(rules, 0, 0, "分辨率", resolution); AddSetting(rules, 0, 1, "游戏速度", gameSpeed); AddSetting(rules, 0, 2, "初始资金", credits);
+        int ruleRow = 3;
+        foreach (CheckBox option in new[] { crates, superWeapons, shortGame, revealAllMap }) { rules.Controls.Add(option, 0, ruleRow++); rules.SetColumnSpan(option, 2); }
         rulesBox.Controls.Add(rules);
-        root.Controls.Add(rulesBox, 0, 3);
+        settings.Controls.Add(rulesBox, 0, 1);
 
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.RightToLeft };
         roomStart.FlatAppearance.BorderSize = 0;
         Button leave = new() { Text = "离开房间", AutoSize = true, Height = 36 }; leave.Click += (_, _) => ReturnHomeRequested?.Invoke();
         roomStatus.Padding = new Padding(0, 9, 12, 0);
-        actions.Controls.AddRange([roomStart, roomReady, leave, roomStatus, status]);
-        root.Controls.Add(actions, 0, 4);
+        actions.Controls.AddRange([roomStart, roomReady, leave]);
+        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var messages = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        roomStatus.AutoSize = false; roomStatus.AutoEllipsis = true; roomStatus.Height = 28;
+        messages.SizeChanged += (_, _) => roomStatus.Width = Math.Max(1, messages.ClientSize.Width - 8);
+        messages.Controls.AddRange([roomStatus, status]); footer.Controls.Add(messages, 0, 0); footer.Controls.Add(actions, 1, 0);
+        root.Controls.Add(footer, 0, 4);
         Controls.Add(root);
     }
 
