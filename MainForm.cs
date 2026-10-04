@@ -18,7 +18,7 @@ internal sealed class MainForm : Form
     private readonly CheckBox shortGame = new() { Text = "摧毁全部建筑即失败", Checked = true, AutoSize = true };
     private readonly CheckBox revealAllMap = new() { Text = "开局全图（无黑幕）", Checked = true, AutoSize = true };
     private readonly ComboBox savedGames = Combo();
-    private readonly MapPreviewControl mapPreview = new() { Dock = DockStyle.Fill };
+    private readonly MapPreviewControl mapPreview;
     private readonly BindingList<ParticipantRow> participants = [];
     private readonly DataGridView grid = new() { Dock = DockStyle.Fill, AutoGenerateColumns = false, AllowUserToAddRows = false, AllowUserToDeleteRows = false, RowHeadersVisible = false, BackgroundColor = Color.White, BorderStyle = BorderStyle.FixedSingle, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, SelectionMode = DataGridViewSelectionMode.FullRowSelect };
     private readonly Label status = new() { AutoSize = true, ForeColor = Color.DarkSlateBlue };
@@ -33,8 +33,11 @@ internal sealed class MainForm : Form
     private bool localRoomReady;
     public event Action? ReturnHomeRequested;
 
-    public MainForm(RoomEntry entry)
+    public MainForm(RoomEntry entry, MapPreviewControl sharedPreview)
     {
+        mapPreview = sharedPreview;
+        mapPreview.AllowStartSelection = true;
+        participants.ListChanged += (_, _) => mapPreview.SetPlayers(participants.Where(row => row.SlotType is 0 or 1).Select(row => (row.Start, row.Color, row.Name)));
         this.entry = entry;
         StartupTrace.Mark("form constructor entered");
         Text = entry.Mode == RoomEntryMode.Create ? $"房间：{entry.RoomName}" : $"正在加入：{entry.HostAddress}";
@@ -58,16 +61,7 @@ internal sealed class MainForm : Form
             if (maps.SelectedItem is MapInfo map) SyncParticipantSlots(map.StartingPoints);
             PublishHostSetup();
         };
-        mapPreview.StartSelected += selected =>
-        {
-            int index = rowPlayerIds.FindIndex(id => id == LocalRoomPlayerId);
-            if (index >= 0 && index < participants.Count)
-            {
-                participants[index].Start = selected;
-                grid.Refresh();
-                UpdateLocalRoomPlayer(participants[index]);
-            }
-        };
+        mapPreview.StartSelected += SelectPreviewStart;
         resolution.Items.AddRange(GameData.Resolutions);
         gameSpeed.Items.AddRange(GameData.GameSpeeds);
         gameSpeed.SelectedIndexChanged += (_, _) => PublishHostSetup();
@@ -186,6 +180,7 @@ internal sealed class MainForm : Form
                 }
             }
             grid.Refresh();
+            mapPreview.SetPlayers(participants.Where(row => row.SlotType is 0 or 1).Select(row => (row.Start, row.Color, row.Name)));
             if (rowPlayerId == LocalRoomPlayerId && rowPlayerId.HasValue) UpdateLocalRoomPlayer(changed);
             else PublishHostSetup();
         };
@@ -230,7 +225,7 @@ internal sealed class MainForm : Form
 
         var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 0, 0, 8) };
         content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        content.RowStyles.Add(new RowStyle(SizeType.Percent, 55)); content.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+        content.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         var battlefieldBox = new GroupBox { Text = "1  选择战场", Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 12), Margin = new Padding(0, 0, 6, 0) };
         var battlefield = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3 };
@@ -238,9 +233,8 @@ internal sealed class MainForm : Form
         battlefield.RowStyles.Add(new RowStyle(SizeType.AutoSize)); battlefield.RowStyles.Add(new RowStyle(SizeType.AutoSize)); battlefield.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         AddSetting(battlefield, 0, 0, "游戏模式", gameMode);
         AddSetting(battlefield, 0, 1, "地图", maps);
-        var previewBox = new GroupBox { Text = "地图缩略图（点击编号选择玩家出生点）", Dock = DockStyle.Fill, Padding = new Padding(7), Margin = new Padding(3, 7, 3, 3) };
-        previewBox.Controls.Add(mapPreview);
-        battlefield.Controls.Add(previewBox, 0, 2); battlefield.SetColumnSpan(previewBox, 2);
+        battlefield.AutoSize = true;
+        battlefieldBox.AutoSize = true;
         battlefieldBox.Controls.Add(battlefield);
         content.Controls.Add(battlefieldBox, 0, 1);
 
@@ -521,6 +515,21 @@ internal sealed class MainForm : Form
 
     private Guid LocalRoomPlayerId => roomHost?.HostId ?? roomClient?.PlayerId ?? Guid.Empty;
 
+    private void SelectPreviewStart(int selected)
+    {
+        int index = rowPlayerIds.FindIndex(id => id == LocalRoomPlayerId);
+        if (index < 0 || index >= participants.Count || startingRoom) return;
+        if (participants.Where((row, position) => position != index).Any(row => row.SlotType is 0 or 1 && row.Start == selected))
+        {
+            status.Text = "这个出生点已经被占用，请选择其他位置。";
+            return;
+        }
+        participants[index].Start = selected;
+        mapPreview.SetPlayers(participants.Where(row => row.SlotType is 0 or 1).Select(row => (row.Start, row.Color, row.Name)));
+        grid.Refresh();
+        UpdateLocalRoomPlayer(participants[index]);
+    }
+
     private LanGameSetup BuildRoomSetup(bool leavingJoinedRoom = false)
     {
         grid.EndEdit();
@@ -603,8 +612,9 @@ internal sealed class MainForm : Form
         {
             if (maps.DataSource is IEnumerable<MapInfo> mapItems)
             {
-                MapInfo? match = mapItems.FirstOrDefault(map => map.Name == state.Setup.MapName);
+                MapInfo? match = mapItems.FirstOrDefault(map => Path.GetFileName(map.Path).Equals(state.Setup.MapFileName, StringComparison.OrdinalIgnoreCase) && LanGameSetup.Hash(File.ReadAllBytes(map.Path)) == state.Setup.MapHash);
                 if (match is not null) maps.SelectedItem = match;
+                mapPreview.Map = match;
             }
             gameMode.SelectedIndex = state.Setup.Ra2Mode ? 0 : 1;
             gameSpeed.SelectedItem = GameData.GameSpeeds.FirstOrDefault(speed => speed.GameSpeed == state.Setup.GameSpeed && speed.MaxGameTicks == state.Setup.MaxGameTicks) ?? gameSpeed.SelectedItem;
@@ -772,6 +782,7 @@ internal sealed class MainForm : Form
 
     protected override void Dispose(bool disposing)
     {
+        if (disposing) mapPreview.StartSelected -= SelectPreviewStart;
         if (disposing) DisposeRoomNetworking();
         base.Dispose(disposing);
     }

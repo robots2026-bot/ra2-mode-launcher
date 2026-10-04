@@ -12,7 +12,9 @@ internal sealed class HomeForm : Form
     private readonly TextBox roomName = new() { Width = 190 };
     private readonly ComboBox savedGames = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ListView rooms = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, GridLines = true };
-    private readonly MapPreviewControl mapPreview = new() { Dock = DockStyle.Fill };
+    public event Action<MapInfo?>? PreviewRequested;
+    private MapInfo? selectedPreview;
+    public void RefreshPreview() => PreviewRequested?.Invoke(selectedPreview);
     private readonly Label roomDetails = new() { Dock = DockStyle.Fill, AutoSize = false, Padding = new Padding(8), ForeColor = Color.FromArgb(55, 58, 64) };
     private readonly Label status = new() { AutoSize = true, ForeColor = Color.DimGray };
     private readonly Button joinSelected = new() { Text = "加入选中房间", AutoSize = true, Height = 36, Enabled = false };
@@ -82,9 +84,8 @@ internal sealed class HomeForm : Form
 
         var infoBox = new GroupBox { Text = "选中对局", Dock = DockStyle.Fill, Padding = new Padding(7), Margin = new Padding(0, 0, 0, 7) };
         var info = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 2 };
-        info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44)); info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56)); info.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); info.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var previewBorder = new Panel { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(3), Margin = new Padding(0, 0, 5, 3) }; previewBorder.Controls.Add(mapPreview);
-        info.Controls.Add(previewBorder, 0, 0); info.Controls.Add(roomDetails, 1, 0);
+        info.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); info.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0)); info.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); info.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        info.Controls.Add(roomDetails, 0, 0); info.SetColumnSpan(roomDetails, 2);
         joinSelected.Click += (_, _) => JoinSelectedRoom();
         var joinRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
         joinRow.Controls.Add(joinSelected); joinRow.Controls.Add(playerName); joinRow.Controls.Add(new Label { Text = "玩家名称", AutoSize = true, Padding = new Padding(0, 7, 3, 0) }); info.Controls.Add(joinRow, 0, 1); info.SetColumnSpan(joinRow, 2);
@@ -143,10 +144,11 @@ internal sealed class HomeForm : Form
     {
         DiscoveredLanRoom? selected = SelectedRoom();
         joinSelected.Enabled = selected is not null && selected.Announcement.OpenSlots > 0;
-        if (selected is null) { mapPreview.Map = null; roomDetails.Text = "选中左侧房间后，这里显示地图和规则。"; return; }
+        if (selected is null) { selectedPreview = null; RefreshPreview(); roomDetails.Text = "选择房间后，右侧显示地图预览。"; return; }
         LanRoomAnnouncement room = selected.Announcement;
         MapInfo? localMap = localMaps.FirstOrDefault(map => string.Equals(Path.GetFileName(map.Path), room.MapFileName, StringComparison.OrdinalIgnoreCase)) ?? localMaps.FirstOrDefault(map => string.Equals(map.Name, room.MapName, StringComparison.OrdinalIgnoreCase));
-        mapPreview.Map = localMap;
+        selectedPreview = GetMapCompatibility(room, localMap) == "本机地图一致" ? localMap : null;
+        RefreshPreview();
         string speed = GameData.GameSpeeds.FirstOrDefault(item => item.GameSpeed == room.GameSpeed && item.MaxGameTicks == room.MaxGameTicks)?.Name ?? $"{room.GameSpeed}/{room.MaxGameTicks}";
         roomDetails.Text = $"房主：{room.HostName}\r\n地址：{selected.Address}:{LanLobbyHost.LobbyPort}\r\n模式：{(room.Ra2Mode ? "红警2经典" : "尤里复仇")}\r\n人数：{room.Players}/{room.Capacity}，开放 {room.OpenSlots}\r\n资金：{room.Credits}，速度：{speed}\r\n规则：{Flag(room.Crates, "箱子")} {Flag(room.SuperWeapons, "超武")} {Flag(room.ShortGame, "短局")} {Flag(room.RevealAllMap, "全图")}\r\n地图：{GetMapCompatibility(room, localMap)}\r\n组件：{GetCompatibility(room)}";
     }

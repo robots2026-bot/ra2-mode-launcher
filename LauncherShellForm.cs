@@ -6,6 +6,7 @@ internal sealed class LauncherShellForm : Form
     private readonly HomeForm lobbyPanel = new();
     private readonly Panel roomHost = new() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(241, 243, 246) };
     private MainForm? roomPanel;
+    private readonly MapPreviewControl sharedPreview = new() { Dock = DockStyle.Fill, AllowStartSelection = false };
 
     public LauncherShellForm()
     {
@@ -24,7 +25,13 @@ internal sealed class LauncherShellForm : Form
         Controls.Add(workspace);
         workspace.Panel1.Padding = new Padding(0, 0, 3, 0);
         workspace.Panel2.Padding = new Padding(3, 0, 0, 0);
-        workspace.Panel2.Controls.Add(roomHost);
+        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        right.RowStyles.Add(new RowStyle(SizeType.Percent, 62)); right.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
+        right.Controls.Add(roomHost, 0, 0);
+        var previewBox = new GroupBox { Text = "共享地图 · 进入房间后固定显示当前地图", Dock = DockStyle.Fill, Padding = new Padding(8) };
+        previewBox.Controls.Add(sharedPreview); right.Controls.Add(previewBox, 0, 1);
+        workspace.Panel2.Controls.Add(right);
+        lobbyPanel.PreviewRequested += map => { if (roomPanel is null) { sharedPreview.Map = map; sharedPreview.SetPlayers([]); } };
         AttachEmbeddedForm(lobbyPanel, workspace.Panel1);
         ShowRoomPlaceholder();
         lobbyPanel.OpenRoomRequested += ShowRoom;
@@ -45,7 +52,7 @@ internal sealed class LauncherShellForm : Form
         if (roomPanel is not null && MessageBox.Show(this, "切换房间会离开当前房间，是否继续？", "切换房间", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         roomPanel?.Dispose();
         roomHost.Controls.Clear();
-        roomPanel = new MainForm(entry);
+        roomPanel = new MainForm(entry, sharedPreview);
         roomPanel.ReturnHomeRequested += RequestLeaveRoom;
         AttachEmbeddedForm(roomPanel, roomHost);
         lobbyPanel.SetRoomActive(true);
@@ -69,6 +76,9 @@ internal sealed class LauncherShellForm : Form
         ShowRoomPlaceholder();
         lobbyPanel.RefreshAfterRoom();
         lobbyPanel.SetRoomActive(false);
+        sharedPreview.AllowStartSelection = false;
+        sharedPreview.SetPlayers([]);
+        lobbyPanel.RefreshPreview();
         Text = "红色警戒 2 / 尤里的复仇启动器";
     }
 
