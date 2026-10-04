@@ -19,7 +19,7 @@
 
 ## 构建
 
-项目源码单独由 Git 管理。构建时使用上级目录 `..\vendor\package_9.3.3` 中的 CnCNet 9.3.3 依赖；体积较大的 `vendor` 内容及其独立上游仓库不纳入本仓库。
+项目源码单独由 Git 管理。构建时使用项目目录内 `vendor\package_9.3.3\package` 中的 CnCNet 9.3.3 依赖；体积较大的 `vendor` 内容不纳入本仓库。克隆后需自行将官方 9.3.3 包解压到该目录，再执行构建。
 
 ```powershell
 dotnet build .\Ra2ModeLauncher.csproj -c Release

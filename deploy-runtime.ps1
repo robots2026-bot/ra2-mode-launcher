@@ -1,6 +1,6 @@
 param(
     [string]$Runtime = 'D:\Software\RA2Mode',
-    [string]$OfficialPackage = (Join-Path $PSScriptRoot '..\vendor\package_9.3.3\package')
+    [string]$OfficialPackage = (Join-Path $PSScriptRoot 'vendor\package_9.3.3\package')
 )
 
 $ErrorActionPreference = 'Stop'

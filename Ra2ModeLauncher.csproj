@@ -10,8 +10,13 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="lzo.net">
-      <HintPath>..\vendor\package_9.3.3\package\Resources\BinariesNET8\lzo.net.dll</HintPath>
+      <HintPath>vendor\package_9.3.3\package\Resources\BinariesNET8\lzo.net.dll</HintPath>
       <Private>true</Private>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="vendor\**" />
+    <EmbeddedResource Remove="vendor\**" />
+    <None Remove="vendor\**" />
   </ItemGroup>
 </Project>
