@@ -16,7 +16,13 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="vendor\**" />
+    <Compile Remove="tests\**" />
     <EmbeddedResource Remove="vendor\**" />
     <None Remove="vendor\**" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('artifacts\cnc-speed\ddraw.dll')">
+    <Content Include="artifacts\cnc-speed\ddraw.dll" Link="native-runtime\ddraw.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="artifacts\cnc-speed\LICENSE.cnc-ddraw.txt" Link="native-runtime\LICENSE.cnc-ddraw.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="artifacts\cnc-speed\LICENSE.Detours.txt" Link="native-runtime\LICENSE.Detours.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

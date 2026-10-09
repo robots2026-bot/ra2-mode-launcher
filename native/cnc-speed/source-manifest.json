@@ -1,0 +1,413 @@
+{
+  "commit": "39f14721c998c937118615c1c4eb02ce20a4e638",
+  "files": [
+    {
+      "path": "LICENSE",
+      "sha": "57da3961009bf73c7d5947b3f91cf73fd4403ca8"
+    },
+    {
+      "path": "cnc-ddraw.sln",
+      "sha": "eca7295a2d7f351848ad4f28a50607aee49bafc3"
+    },
+    {
+      "path": "cnc-ddraw.vcxproj",
+      "sha": "3f5d12defee6e7e3ca4b360531ea3cf60bdd2d7d"
+    },
+    {
+      "path": "exports.def",
+      "sha": "1e25f0ff2aa92981b86cd25d77ec8f7e47a32b0f"
+    },
+    {
+      "path": "inc/IAMMediaStream.h",
+      "sha": "b3df4c01773eccabb250f240cd86a1f5668ca134"
+    },
+    {
+      "path": "inc/IDirect3D.h",
+      "sha": "aed4b3d2370d13f580e1907ce5acceb954fae255"
+    },
+    {
+      "path": "inc/IDirectDraw.h",
+      "sha": "b354342fddb51751e110f8f2ee4b64eb2e65c710"
+    },
+    {
+      "path": "inc/IDirectDrawClipper.h",
+      "sha": "95510e6155eacff7d60b2efe3e68d69bdfc25e9d"
+    },
+    {
+      "path": "inc/IDirectDrawGammaControl.h",
+      "sha": "913b166114fa910f1b2e7f6ba59512edd120ce75"
+    },
+    {
+      "path": "inc/IDirectDrawPalette.h",
+      "sha": "59fcdfe389217b6b22c78d7139d6d52fb5accf7c"
+    },
+    {
+      "path": "inc/IDirectDrawSurface.h",
+      "sha": "b96314abbf8f4a4114083c4841aef563a8bdcb56"
+    },
+    {
+      "path": "inc/KHR/khrplatform.h",
+      "sha": "975bbffed6741b75e05d5d2db2d28cc578d4f4fe"
+    },
+    {
+      "path": "inc/blt.h",
+      "sha": "8f35696e4f5cb732b3c46c8ff731440e650b6d36"
+    },
+    {
+      "path": "inc/config.h",
+      "sha": "e15beceb224eeeed4516c70f05025a00d0e69489"
+    },
+    {
+      "path": "inc/crc32.h",
+      "sha": "9b0728d20a732acc029889168c6794c9b3ae3d2b"
+    },
+    {
+      "path": "inc/d3d9shader.h",
+      "sha": "130d33fb47d32164e9123845a0ca8f7088589c47"
+    },
+    {
+      "path": "inc/d3dcaps.h",
+      "sha": "4f86f61306f8448c979040a6afe5415c383e58b5"
+    },
+    {
+      "path": "inc/dd.h",
+      "sha": "fe175f7c99ade76651dec33c89cdcb4616db5334"
+    },
+    {
+      "path": "inc/ddclipper.h",
+      "sha": "3f23c9324650ed592169429742a578add43d6969"
+    },
+    {
+      "path": "inc/ddpalette.h",
+      "sha": "cfd46ff4401c97d8049361da9b7b2a2dc258beaa"
+    },
+    {
+      "path": "inc/ddraw.h",
+      "sha": "4b72177f2b3804a66ecc8a0f3212db16dbac0bb4"
+    },
+    {
+      "path": "inc/ddsurface.h",
+      "sha": "80e37ae130c6c5e1ff49360ac0c0940ddb47a183"
+    },
+    {
+      "path": "inc/debug.h",
+      "sha": "fa70c85e6a03bd1f05cf683d15b391bd3ed9eabf"
+    },
+    {
+      "path": "inc/delay_imports.h",
+      "sha": "ba654ed549f6b8ec18f4bbdaf196925985b24723"
+    },
+    {
+      "path": "inc/directinput.h",
+      "sha": "cc0f25a6d6e7d3fca2946d645132853a709b9b0f"
+    },
+    {
+      "path": "inc/dllmain.h",
+      "sha": "f7e028b19a1d804f94900d27b77a3d52470532e7"
+    },
+    {
+      "path": "inc/fps_limiter.h",
+      "sha": "ec0f7bc30e599c4bfcee206e2c4a8e5c79afe6ab"
+    },
+    {
+      "path": "inc/glcorearb.h",
+      "sha": "f2413f839ef376f66bb5b40feb421a2b0d6f1e46"
+    },
+    {
+      "path": "inc/hook.h",
+      "sha": "23de636c581dc20c65276518bef5f340ef4996b4"
+    },
+    {
+      "path": "inc/indeo.h",
+      "sha": "a83e0078b22db9550021e453d1929122b56cf346"
+    },
+    {
+      "path": "inc/ini.h",
+      "sha": "e3f073c4c4c684af877aeddf9a1d866f83c236d4"
+    },
+    {
+      "path": "inc/keyboard.h",
+      "sha": "89621989dfb887dd91e32402fa9a52089ff96574"
+    },
+    {
+      "path": "inc/lodepng.h",
+      "sha": "2780e0951c68d42fd3d649ff55ac7cfef06e9414"
+    },
+    {
+      "path": "inc/mouse.h",
+      "sha": "1181ac2be291ea7d8d1663f3bea9418d111e94fe"
+    },
+    {
+      "path": "inc/opengl_utils.h",
+      "sha": "d84dd20d2f55cff5a3146a7a9dee716a76e66467"
+    },
+    {
+      "path": "inc/openglshader.h",
+      "sha": "33f94fda20cd3afc7b6e1126745afec869339cbe"
+    },
+    {
+      "path": "inc/palette.h",
+      "sha": "8e38ec41576b77d8396dbd08ff3e08f983aedb7a"
+    },
+    {
+      "path": "inc/patch.h",
+      "sha": "5f6d381b3d71201486d98b3f561e67dbea21af57"
+    },
+    {
+      "path": "inc/render_d3d9.h",
+      "sha": "2de021cf23fda53cfe43bcc5d1557fb98af293c2"
+    },
+    {
+      "path": "inc/render_gdi.h",
+      "sha": "caf9dab70eeb6bd4eab345dfe4494202e218a0da"
+    },
+    {
+      "path": "inc/render_ogl.h",
+      "sha": "bc4d39f6c3eab3d2122df133d6b520814d376d3f"
+    },
+    {
+      "path": "inc/screenshot.h",
+      "sha": "f3289ea0650f1dab5916967be9fb33f45124d275"
+    },
+    {
+      "path": "inc/utils.h",
+      "sha": "3833edebf71a052a6a9d2f2d3d5752dc41508cbd"
+    },
+    {
+      "path": "inc/version.h",
+      "sha": "29e19fa07bc77c8857e0621a540369abef9596ec"
+    },
+    {
+      "path": "inc/versionhelpers.h",
+      "sha": "36f2dd62b77d771bd98a3ed401ea07183dc4199d"
+    },
+    {
+      "path": "inc/wglext.h",
+      "sha": "70a2613aa48143ab0789e441836f42f48385c0d8"
+    },
+    {
+      "path": "inc/winapi_hooks.h",
+      "sha": "ad44c7e7cc58e87614e970fc1f4f5eb4e5c783ae"
+    },
+    {
+      "path": "inc/wndproc.h",
+      "sha": "4af4f7e9d66d54431e820ad2e6d0dba37916891e"
+    },
+    {
+      "path": "res.rc",
+      "sha": "46f3908a6dcbf96eda6c39ecc0bbaccfc95c2041"
+    },
+    {
+      "path": "src/IAMMediaStream/IAMMediaStream.c",
+      "sha": "602ce5151b36eddc8837c89ddee6c4a8e1f9acc5"
+    },
+    {
+      "path": "src/IDirect3D/IDirect3D.c",
+      "sha": "e4b0ee5ee639b65528317d3b466c75d3b6fac375"
+    },
+    {
+      "path": "src/IDirect3D/IDirect3D2.c",
+      "sha": "c4f93ab0023d3b7d1810ffeed1fac91d10e93ab4"
+    },
+    {
+      "path": "src/IDirect3D/IDirect3D3.c",
+      "sha": "8b6ff4338c9f9ea30823bea596ef6ab75a037f1e"
+    },
+    {
+      "path": "src/IDirect3D/IDirect3D7.c",
+      "sha": "01029232eca0f66712c04bac105c2fd1b3066e02"
+    },
+    {
+      "path": "src/IDirectDraw/IDirectDraw.c",
+      "sha": "93847146f0d1c3cf62801715c155d8fbc520b3ad"
+    },
+    {
+      "path": "src/IDirectDraw/IDirectDrawClipper.c",
+      "sha": "6270c09f64dbb0bad0cbfd5859e14c7c1156a7e9"
+    },
+    {
+      "path": "src/IDirectDraw/IDirectDrawGammaControl.c",
+      "sha": "d0bd36a46c1cea1f9a678be5beac186222fce7d5"
+    },
+    {
+      "path": "src/IDirectDraw/IDirectDrawPalette.c",
+      "sha": "0a6334ad22808b3287008c3a3ef6bd4a1e726bb0"
+    },
+    {
+      "path": "src/IDirectDraw/IDirectDrawSurface.c",
+      "sha": "7916405d672a1ced59bd201e6a2dfdba92e74d93"
+    },
+    {
+      "path": "src/blt.c",
+      "sha": "166e3ddd277df615face4973715c45e2b24af0c8"
+    },
+    {
+      "path": "src/config.c",
+      "sha": "36b756aa37a39d633a6122732411112783e97877"
+    },
+    {
+      "path": "src/crc32.c",
+      "sha": "e7ff75dfc00b93fe7472922a4c9db77a6290edb3"
+    },
+    {
+      "path": "src/dd.c",
+      "sha": "b9e5b1284b9ea5759896443a44eebf55de97cea4"
+    },
+    {
+      "path": "src/ddclipper.c",
+      "sha": "d1d6ceb5a80a784c075889264393aceff1a25e5d"
+    },
+    {
+      "path": "src/ddpalette.c",
+      "sha": "e51df8e3007faf184670ee4a85e9f7a936710b22"
+    },
+    {
+      "path": "src/ddsurface.c",
+      "sha": "96d69dec8e7fefca59b49dec2f4daa1b109049c6"
+    },
+    {
+      "path": "src/debug.c",
+      "sha": "b030114d0ff0b61e03037be7f8a019eac8b77eb7"
+    },
+    {
+      "path": "src/delay_imports.c",
+      "sha": "2b23ddaddb468adc1a665b0e21e4a01a9f2ea251"
+    },
+    {
+      "path": "src/detours/CREDITS.TXT",
+      "sha": "a1226767e274cec148fd5065469c309a1f8ef48c"
+    },
+    {
+      "path": "src/detours/LICENSE.md",
+      "sha": "e6a4c563056daedce20576a96a4d77b02a7dc8b6"
+    },
+    {
+      "path": "src/detours/README.md",
+      "sha": "b5c5239c6d2ce2b1bfd89c926bb09b9796910be7"
+    },
+    {
+      "path": "src/detours/creatwth.cpp",
+      "sha": "bbe7cc8f5acd422ed7880f5b8d07426abf6dbaea"
+    },
+    {
+      "path": "src/detours/detours.cpp",
+      "sha": "fb18ef865493cf7722949c98963096300d27ddda"
+    },
+    {
+      "path": "src/detours/detours.h",
+      "sha": "adb34ebdb65241ceed37b502ac1a5904f1ecf1ec"
+    },
+    {
+      "path": "src/detours/detver.h",
+      "sha": "f0aae9bd1c8c8eb859e5c89f9a533733c4d61f27"
+    },
+    {
+      "path": "src/detours/disasm.cpp",
+      "sha": "0ce5993f052a4c047a0ead459e33281eeea0d99e"
+    },
+    {
+      "path": "src/detours/disolarm.cpp",
+      "sha": "57e3a2c9f4993d80e5de8544118c10b8400b6a7b"
+    },
+    {
+      "path": "src/detours/disolarm64.cpp",
+      "sha": "f3a6aeb8c01617a070d894a3896803dd3bb90023"
+    },
+    {
+      "path": "src/detours/disolia64.cpp",
+      "sha": "9dd2410e836e8667a9e80efc048acf1e2bce21b9"
+    },
+    {
+      "path": "src/detours/disolx64.cpp",
+      "sha": "cd05a006f8b5c21d3b479cf50606f9f788f5c110"
+    },
+    {
+      "path": "src/detours/disolx86.cpp",
+      "sha": "91ff7d9a9fc006b710a9b729e69e67bf84aa1c7a"
+    },
+    {
+      "path": "src/detours/image.cpp",
+      "sha": "0219b7259e57f851680e7bf86c2b1eba77fb8810"
+    },
+    {
+      "path": "src/detours/modules.cpp",
+      "sha": "341673085f57f4ce89b361ff8e71298e27098a99"
+    },
+    {
+      "path": "src/detours/uimports.cpp",
+      "sha": "1e8cbd70825a3e70d2a73b7f05ae1cfef82564a1"
+    },
+    {
+      "path": "src/directinput.c",
+      "sha": "a0d077dfe0709c38db01220952e5d7b33f51fd43"
+    },
+    {
+      "path": "src/dllmain.c",
+      "sha": "8832177d7874489b96bb5f31c7eea06defd52c9d"
+    },
+    {
+      "path": "src/fps_limiter.c",
+      "sha": "09967841f72d8e8713191d7db9cecf3b3605da70"
+    },
+    {
+      "path": "src/hook.c",
+      "sha": "29846c79d0fbd5fa637f9f0f84348da025ef150c"
+    },
+    {
+      "path": "src/indeo.c",
+      "sha": "65fa2aba2ad4f3028e7f337cff66ba97601329b3"
+    },
+    {
+      "path": "src/ini.c",
+      "sha": "3304000075cad5b2eb19ef2c5173484158c43b5a"
+    },
+    {
+      "path": "src/keyboard.c",
+      "sha": "f54ba6307968b9814b7b89d67ec6d6e82e6340bd"
+    },
+    {
+      "path": "src/lodepng.c",
+      "sha": "05287bbfaa5a1455bf53092408e472eedf770d96"
+    },
+    {
+      "path": "src/mouse.c",
+      "sha": "46aca134f7d0c4ff2ba3aaf09aec43d7ccf59594"
+    },
+    {
+      "path": "src/opengl_utils.c",
+      "sha": "e315b154ead4f83856f10763c5e376d986eed2fd"
+    },
+    {
+      "path": "src/render_d3d9.c",
+      "sha": "dde4b2cd7adde2acf4846851888c2b3629dcbcb5"
+    },
+    {
+      "path": "src/render_gdi.c",
+      "sha": "c7292ed471cc6de877396c3c2372ad16234b7ed8"
+    },
+    {
+      "path": "src/render_ogl.c",
+      "sha": "aae1d34e156e49ab0bc47c4cdd8915daef5e7e49"
+    },
+    {
+      "path": "src/screenshot.c",
+      "sha": "063955bf86e103f3fba0b084ab6ef58ad5a0465f"
+    },
+    {
+      "path": "src/utils.c",
+      "sha": "fafd4edfd9cae660eb75b132e4d21e00527f860c"
+    },
+    {
+      "path": "src/versionhelpers.c",
+      "sha": "f9f35c2da154fe095549417d6728667f2c41d040"
+    },
+    {
+      "path": "src/winapi_hooks.c",
+      "sha": "33655c1b2378d234242e1ac7eff6eb0dfae62c50"
+    },
+    {
+      "path": "src/wndproc.c",
+      "sha": "35550582ad80d7c02bab6bb55c6bce09b8b758d5"
+    }
+  ]
+}

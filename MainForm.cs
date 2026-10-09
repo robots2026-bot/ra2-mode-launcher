@@ -12,6 +12,7 @@ internal sealed class MainForm : Form
     private readonly ComboBox maps = Combo();
     private readonly ComboBox resolution = Combo();
     private readonly ComboBox gameSpeed = Combo();
+    private readonly NumericUpDown customSpeed = new() { Minimum = 1, Maximum = 1000, Value = 60, Width = 90, Enabled = false };
     private readonly NumericUpDown credits = new() { Minimum = 5000, Maximum = 100000, Increment = 5000, Value = 10000, Width = 90 };
     private readonly CheckBox crates = new() { Text = "随机箱", Checked = true, AutoSize = true };
     private readonly CheckBox superWeapons = new() { Text = "超级武器", Checked = true, AutoSize = true };
@@ -29,8 +30,11 @@ internal sealed class MainForm : Form
     private LanLobbyHost? roomHost;
     private LanLobbyClient? roomClient;
     private bool applyingRoomState;
+    private bool editingParticipant;
     private bool startingRoom;
     private bool localRoomReady;
+    private LanRoomState? lastRoomState;
+    private readonly Label roomTitle = new() { AutoSize = true };
     public event Action? ReturnHomeRequested;
 
     public MainForm(RoomEntry entry, MapPreviewControl sharedPreview)
@@ -64,7 +68,8 @@ internal sealed class MainForm : Form
         mapPreview.StartSelected += SelectPreviewStart;
         resolution.Items.AddRange(GameData.Resolutions);
         gameSpeed.Items.AddRange(GameData.GameSpeeds);
-        gameSpeed.SelectedIndexChanged += (_, _) => PublishHostSetup();
+        gameSpeed.SelectedIndexChanged += (_, _) => { customSpeed.Enabled = gameSpeed.Enabled && gameSpeed.SelectedItem is GameSpeedChoice { Custom: true }; PublishHostSetup(); };
+        customSpeed.ValueChanged += (_, _) => { if (gameSpeed.SelectedItem is GameSpeedChoice { Custom: true }) PublishHostSetup(); };
         credits.ValueChanged += (_, _) => PublishHostSetup();
         crates.CheckedChanged += (_, _) => PublishHostSetup();
         superWeapons.CheckedChanged += (_, _) => PublishHostSetup();
@@ -83,7 +88,7 @@ internal sealed class MainForm : Form
         StartupTrace.Mark("layout built");
         gameMode.SelectedIndex = 0;
         resolution.SelectedItem = GameData.Resolutions.FirstOrDefault(item => item.Width == config.ResolutionWidth && item.Height == config.ResolutionHeight) ?? GameData.Resolutions[5];
-        gameSpeed.SelectedItem = GameData.GameSpeeds.FirstOrDefault(item => item.GameSpeed == config.GameSpeed && item.MaxGameTicks == config.MaxGameTicks) ?? GameData.GameSpeeds[4];
+        SelectSpeed(config.GameSpeed, config.MaxGameTicks);
         shortGame.Checked = config.ShortGame;
         ReloadMaps();
         StartupTrace.Mark("maps loaded");
@@ -124,8 +129,7 @@ internal sealed class MainForm : Form
         {
             if (e.RowIndex < 0 || e.ColumnIndex < 0 || grid.Columns[e.ColumnIndex] is not DataGridViewComboBoxColumn) return;
             grid.CurrentCell = grid[e.ColumnIndex, e.RowIndex];
-            grid.BeginEdit(true);
-            if (grid.EditingControl is DataGridViewComboBoxEditingControl editor)
+            if (grid.BeginEdit(true) && grid.EditingControl is DataGridViewComboBoxEditingControl editor)
                 editor.DroppedDown = true;
         };
         grid.DataError += (_, e) =>
@@ -135,9 +139,15 @@ internal sealed class MainForm : Form
         };
         grid.CellFormatting += (_, e) =>
         {
-            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+            if (e.RowIndex < 0 || e.RowIndex >= participants.Count || e.ColumnIndex < 0) return;
             ParticipantRow participant = participants[e.RowIndex];
             string column = grid.Columns[e.ColumnIndex].Name;
+            Guid? owner = e.RowIndex < rowPlayerIds.Count ? rowPlayerIds[e.RowIndex] : null;
+            if (e.CellStyle is not null)
+            {
+                if (owner == LocalRoomPlayerId && owner.HasValue) e.CellStyle.BackColor = Color.FromArgb(232, 244, 255);
+                if (owner.HasValue && owner != LocalRoomPlayerId || roomClient is not null && !owner.HasValue) e.CellStyle.ForeColor = Color.Gray;
+            }
             bool inactive = participant.SlotType is 2 or 3;
             if ((participant.SlotType == 0 && column == nameof(ParticipantRow.Difficulty)) || (inactive && column != nameof(ParticipantRow.SlotType) && column != nameof(ParticipantRow.ReadyStatus)))
             {
@@ -148,6 +158,8 @@ internal sealed class MainForm : Form
         };
         grid.CellBeginEdit += (_, e) =>
         {
+            if (e.RowIndex < 0 || e.RowIndex >= participants.Count) { e.Cancel = true; return; }
+            if (startingRoom || lastRoomState is null || lastRoomState.Phase != "等待中") { e.Cancel = true; return; }
             ParticipantRow participant = participants[e.RowIndex];
             string column = grid.Columns[e.ColumnIndex].Name;
             if (column == nameof(ParticipantRow.ReadyStatus)) { e.Cancel = true; return; }
@@ -161,28 +173,34 @@ internal sealed class MainForm : Form
         };
         grid.CellValueChanged += (_, e) =>
         {
-            if (applyingRoomState || e.RowIndex < 0 || e.ColumnIndex < 0) return;
-            ParticipantRow changed = participants[e.RowIndex];
-            string column = grid.Columns[e.ColumnIndex].Name;
-            Guid? rowPlayerId = e.RowIndex < rowPlayerIds.Count ? rowPlayerIds[e.RowIndex] : null;
-            if (column == nameof(ParticipantRow.SlotType) && !rowPlayerId.HasValue)
+            if (applyingRoomState || editingParticipant || e.RowIndex < 0 || e.RowIndex >= participants.Count || e.ColumnIndex < 0) return;
+            editingParticipant = true;
+            try
             {
-                if (changed.SlotType == 0) changed.SlotType = 2;
-                changed.Name = changed.SlotType switch { 1 => $"电脑 {e.RowIndex}", 2 => "开放", _ => "关闭" };
-                changed.ReadyStatus = changed.SlotType switch { 1 => "就绪", 2 => "等待加入", _ => "—" };
-                if (changed.SlotType == 1)
+                ParticipantRow changed = participants[e.RowIndex];
+                string column = grid.Columns[e.ColumnIndex].Name;
+                Guid? rowPlayerId = e.RowIndex < rowPlayerIds.Count ? rowPlayerIds[e.RowIndex] : null;
+                if (column == nameof(ParticipantRow.SlotType) && !rowPlayerId.HasValue)
                 {
-                    changed.Country = GameData.Countries[e.RowIndex % GameData.Countries.Length].Value;
-                    changed.Color = GameData.Colors[e.RowIndex % GameData.Colors.Length].Value;
-                    changed.Team = 1;
-                    changed.Difficulty = 0;
-                    changed.Start = e.RowIndex + 1;
+                    if (changed.SlotType == 0) changed.SlotType = 2;
+                    changed.Name = changed.SlotType switch { 1 => $"电脑 {e.RowIndex}", 2 => "开放", _ => "关闭" };
+                    changed.ReadyStatus = changed.SlotType switch { 1 => "就绪", 2 => "等待加入", _ => "—" };
                 }
-            }
-            grid.Refresh();
-            mapPreview.SetPlayers(participants.Where(row => row.SlotType is 0 or 1).Select(row => (row.Start, row.Color, row.Name)));
-            if (rowPlayerId == LocalRoomPlayerId && rowPlayerId.HasValue) UpdateLocalRoomPlayer(changed);
-            else PublishHostSetup();
+                grid.Invalidate();
+                mapPreview.SetPlayers(participants.Where(row => row.SlotType is 0 or 1).Select(row => (row.Start, row.Color, row.Name)));
+                // Finish the DataGridView commit before publishing and applying a room snapshot.
+                BeginInvoke((Action)(() =>
+                {
+                    if (IsDisposed || applyingRoomState) return;
+                    if (rowPlayerId == LocalRoomPlayerId && rowPlayerId.HasValue)
+                    {
+                        if (column == nameof(ParticipantRow.Name)) _ = UpdateRoomNameAsync(changed.Name);
+                        else UpdateLocalRoomPlayer(changed);
+                    }
+                    else PublishHostSetup();
+                }));
+                }
+            finally { editingParticipant = false; }
         };
         grid.Columns.Add(ChoiceColumn(nameof(ParticipantRow.SlotType), "位置状态", GameData.SlotTypes, 105));
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = nameof(ParticipantRow.Name), DataPropertyName = nameof(ParticipantRow.Name), HeaderText = "名称", FillWeight = 105 });
@@ -211,7 +229,8 @@ internal sealed class MainForm : Form
         var heading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 0, 0, 8) };
         heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var titleBlock = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = Padding.Empty };
-        titleBlock.Controls.Add(new Label { Text = "红色警戒 2 / 尤里的复仇", AutoSize = true, Font = new Font(Font.FontFamily, 13f, FontStyle.Bold) });
+        roomTitle.Text = "正在进入房间…"; roomTitle.Font = new Font(Font.FontFamily, 13f, FontStyle.Bold);
+        titleBlock.Controls.Add(roomTitle);
         titleBlock.Controls.Add(new Label { Text = "房间内同时设置地图、位置和规则；一人为单机，多人为局域网", AutoSize = true, ForeColor = Color.DimGray });
         var advanced = new Panel { Dock = DockStyle.Fill, AutoSize = true, Visible = false, Padding = new Padding(0, 4, 0, 8) };
         var paths = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, RowCount = 1 };
@@ -254,8 +273,8 @@ internal sealed class MainForm : Form
         var rulesBox = new GroupBox { Text = "规则与显示", Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10) };
         var rules = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 7 };
         rules.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); rules.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddSetting(rules, 0, 0, "分辨率", resolution); AddSetting(rules, 0, 1, "游戏速度", gameSpeed); AddSetting(rules, 0, 2, "初始资金", credits);
-        int ruleRow = 3;
+        AddSetting(rules, 0, 0, "分辨率", resolution); AddSetting(rules, 0, 1, "初始速度", gameSpeed); AddSetting(rules, 0, 2, "自定义速度/秒", customSpeed); AddSetting(rules, 0, 3, "初始资金", credits);
+        int ruleRow = 4;
         foreach (CheckBox option in new[] { crates, superWeapons, shortGame, revealAllMap }) { rules.Controls.Add(option, 0, ruleRow++); rules.SetColumnSpan(option, 2); }
         rulesBox.Controls.Add(rules);
         settings.Controls.Add(rulesBox, 0, 1);
@@ -297,6 +316,20 @@ internal sealed class MainForm : Form
         control.Margin = new Padding(3, 3, 12, 5);
         panel.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 7, 3, 5) }, column, row);
         panel.Controls.Add(control, column + 1, row);
+    }
+
+    private GameSpeedChoice SelectedSpeed => gameSpeed.SelectedItem is GameSpeedChoice { Custom: true } ? new("自定义", 0, (int)customSpeed.Value, true) : (GameSpeedChoice)gameSpeed.SelectedItem!;
+
+    private void SelectSpeed(int engineSpeed, int maxGameTicks)
+    {
+        GameSpeedChoice? preset = GameData.GameSpeeds.FirstOrDefault(item => !item.Custom && item.GameSpeed == engineSpeed && item.MaxGameTicks == maxGameTicks);
+        if (preset is not null) gameSpeed.SelectedItem = preset;
+        else if (engineSpeed == 0 && maxGameTicks is >= 1 and <= 1000)
+        {
+            customSpeed.Value = maxGameTicks;
+            gameSpeed.SelectedItem = GameData.GameSpeeds.Single(item => item.Custom);
+        }
+        else gameSpeed.SelectedItem = GameData.GameSpeeds[4];
     }
 
     private static Control PathRow(string label, TextBox textBox, Action? changed)
@@ -380,15 +413,15 @@ internal sealed class MainForm : Form
         ResolutionChoice selectedResolution = (ResolutionChoice)resolution.SelectedItem!;
         config.ResolutionWidth = selectedResolution.Width;
         config.ResolutionHeight = selectedResolution.Height;
-        GameSpeedChoice selectedSpeed = (GameSpeedChoice)gameSpeed.SelectedItem!;
+        GameSpeedChoice selectedSpeed = SelectedSpeed;
         config.GameSpeed = selectedSpeed.GameSpeed;
         config.MaxGameTicks = selectedSpeed.MaxGameTicks;
         config.ShortGame = shortGame.Checked;
         config.Save();
 
         IniFileEditor.SetVideoResolution(config.RuntimePath, selectedResolution.Width, selectedResolution.Height);
-        IniFileEditor.ConfigureCncDdraw(config.RuntimePath, selectedSpeed.MaxGameTicks);
-        SpawnWriter.Write(config.RuntimePath, new LaunchOptions(gameMode.SelectedIndex == 0, config.PlayerName, map, new Choice("", human.Country), new Choice("", human.Color), human.Team, human.Start, (int)credits.Value, config.GameSpeed, crates.Checked, superWeapons.Checked, config.ShortGame, revealAllMap.Checked, ais));
+        int launchSpeed = IniFileEditor.ConfigureSinglePlayerSpeed(config.RuntimePath, selectedSpeed.GameSpeed, selectedSpeed.MaxGameTicks);
+        SpawnWriter.Write(config.RuntimePath, new LaunchOptions(gameMode.SelectedIndex == 0, config.PlayerName, map, new Choice("", human.Country), new Choice("", human.Color), human.Team, human.Start, (int)credits.Value, launchSpeed, crates.Checked, superWeapons.Checked, config.ShortGame, revealAllMap.Checked, ais));
         status.Text = "配置已生成";
         if (showSuccess) MessageBox.Show("已生成 spawn.ini 和 spawnmap.ini。", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
@@ -431,21 +464,7 @@ internal sealed class MainForm : Form
             if (!Directory.Exists(runtime)) throw new DirectoryNotFoundException("当前游戏目录不存在。");
             if (!File.Exists(Path.Combine(runtime, "Syringe.exe"))) throw new FileNotFoundException("运行目录中缺少 Syringe.exe。");
             ParticipantRow human = participants.Single(item => item.SlotType == 0);
-            List<ParticipantRow> available = [human, .. participants.Where(item => item.SlotType == 2), .. participants.Where(item => item.SlotType == 1)];
-            if (available.Count < 2) throw new InvalidOperationException("局域网地图至少需要两个未关闭的位置。请把一个位置设为“开放”或“电脑”。");
-            if (available.Select(item => item.Start).Distinct().Count() != available.Count) throw new InvalidOperationException("可用位置的出生点不能重复。");
-            if (available.Select(item => item.Color).Distinct().Count() != available.Count) throw new InvalidOperationException("可用位置的颜色不能重复。");
-
-            GameSpeedChoice selectedSpeed = (GameSpeedChoice)gameSpeed.SelectedItem!;
-            byte[] mapData = File.ReadAllBytes(map.Path);
-            List<LanSlot> slots = available.Select((item, index) => new LanSlot(
-                item.SlotType == 2 ? GameData.Countries[index % GameData.Countries.Length].Value : item.Country,
-                item.SlotType == 2 ? GameData.Colors[index % GameData.Colors.Length].Value : item.Color,
-                item.SlotType == 2 ? 0 : item.Team,
-                item.SlotType == 2 ? 0 : item.Difficulty,
-                item.Start,
-                item.SlotType == 1)).ToList();
-            var setup = new LanGameSetup(gameMode.SelectedIndex == 0, map.Name, Path.GetFileName(map.Path), mapData, LanGameSetup.Hash(mapData), LanCompatibility.ComputeComponentHash(runtime), (int)credits.Value, selectedSpeed.GameSpeed, selectedSpeed.MaxGameTicks, crates.Checked, superWeapons.Checked, shortGame.Checked, revealAllMap.Checked, slots);
+            LanGameSetup setup = BuildRoomSetup();
             using var lobby = new LanLobbyForm(runtime, human.Name.Trim(), setup);
             lobby.ShowDialog(this);
         }
@@ -460,8 +479,8 @@ internal sealed class MainForm : Form
         try
         {
             if (savedGames.SelectedItem is not SaveInfo save) throw new InvalidOperationException("没有可加载的 .SAV 存档。");
-            GameSpeedChoice selectedSpeed = (GameSpeedChoice)gameSpeed.SelectedItem!;
-            IniFileEditor.ConfigureCncDdraw(runtimePath.Text.Trim(), selectedSpeed.MaxGameTicks);
+            GameSpeedChoice selectedSpeed = SelectedSpeed;
+            IniFileEditor.ConfigureSinglePlayerSpeed(runtimePath.Text.Trim(), selectedSpeed.GameSpeed, selectedSpeed.MaxGameTicks);
             SpawnWriter.WriteLoadSave(runtimePath.Text.Trim(), save);
             StartGameProcess(loadSave: true, useAresExtensions: save.UsesAresExtensions);
             status.Text = $"正在加载 {save.DisplayName}";
@@ -515,13 +534,23 @@ internal sealed class MainForm : Form
                 return;
             }
             await game.WaitForExitAsync();
-            if (!IsDisposed) { status.Text = "游戏已退出，可以重新准备并开始。"; await SetRoomReadyAsync(false); }
+            int exitCode = game.ExitCode;
+            StartupTrace.Mark($"game exited: pid={game.Id}, exitCode=0x{unchecked((uint)exitCode):X8}");
+            if (!IsDisposed) status.Text = exitCode == 0
+                ? "游戏已退出，等待其他玩家返回房间。"
+                : $"游戏已退出（退出码 0x{unchecked((uint)exitCode):X8}），详情见启动日志。";
         }
         catch (Exception ex) { if (!IsDisposed) status.Text = $"游戏状态检测失败：{ex.Message}"; }
         finally
         {
             game?.Dispose();
-            if (!IsDisposed) { startingRoom = false; roomStart.Enabled = roomHost is not null && roomHost.CanLaunch(out _); }
+            if (!IsDisposed)
+            {
+                startingRoom = false;
+                roomHost?.ReportGameExited();
+                if (roomClient is not null) { try { await roomClient.ReportGameExitedAsync(); } catch (Exception ex) { roomStatus.Text = ex.Message; } }
+                if (lastRoomState is not null) ApplyRoomState(lastRoomState);
+            }
         }
     }
 
@@ -530,7 +559,7 @@ internal sealed class MainForm : Form
     private void SelectPreviewStart(int selected)
     {
         int index = rowPlayerIds.FindIndex(id => id == LocalRoomPlayerId);
-        if (index < 0 || index >= participants.Count || startingRoom) return;
+        if (index < 0 || index >= participants.Count || startingRoom || lastRoomState?.Phase != "等待中") return;
         if (participants.Where((row, position) => position != index).Any(row => row.SlotType is 0 or 1 && row.Start == selected))
         {
             status.Text = "这个出生点已经被占用，请选择其他位置。";
@@ -544,47 +573,37 @@ internal sealed class MainForm : Form
 
     private LanGameSetup BuildRoomSetup(bool leavingJoinedRoom = false)
     {
-        grid.EndEdit();
         if (maps.SelectedItem is not MapInfo map) throw new InvalidOperationException("没有选择有效地图。");
         string runtime = runtimePath.Text.Trim();
         if (!Directory.Exists(runtime)) throw new DirectoryNotFoundException("当前游戏目录不存在。");
         if (!File.Exists(Path.Combine(runtime, "Syringe.exe"))) throw new FileNotFoundException("运行目录中缺少 Syringe.exe。");
 
         Guid localId = LocalRoomPlayerId;
-        var humans = new List<ParticipantRow>();
-        var open = new List<ParticipantRow>();
-        var computers = new List<ParticipantRow>();
-        var closed = new List<ParticipantRow>();
+        var humanIndices = new HashSet<int>();
         for (int i = 0; i < participants.Count; i++)
         {
-            ParticipantRow row = participants[i];
             Guid? playerId = i < rowPlayerIds.Count ? rowPlayerIds[i] : null;
-            if (playerId.HasValue && (!leavingJoinedRoom || playerId.Value == localId)) humans.Add(row);
-            else if (playerId.HasValue || row.SlotType == 2) open.Add(row);
-            else if (row.SlotType == 1) computers.Add(row);
-            else closed.Add(row);
+            if (playerId.HasValue && (!leavingJoinedRoom || playerId.Value == localId)) humanIndices.Add(i);
         }
-        if (humans.Count == 0)
+        if (humanIndices.Count == 0)
         {
-            ParticipantRow human = participants.FirstOrDefault(row => row.SlotType == 0) ?? participants[0];
-            humans.Add(human);
-            open.Remove(human); computers.Remove(human); closed.Remove(human);
+            int human = participants.ToList().FindIndex(row => row.SlotType == 0);
+            humanIndices.Add(human >= 0 ? human : 0);
         }
-        List<ParticipantRow> ordered = [.. humans, .. open, .. computers, .. closed];
-        Choice[] countries = gameMode.SelectedIndex == 0 ? GameData.Countries : GameData.YuriCountries;
-        List<LanSlot> slots = ordered.Select((row, index) => new LanSlot(
-            row.SlotType == 2 ? countries[index % countries.Length].Value : row.Country,
-            row.SlotType == 2 ? GameData.Colors[index % GameData.Colors.Length].Value : row.Color,
-            row.SlotType == 2 ? 0 : row.Team,
-            row.SlotType == 2 ? 0 : row.Difficulty,
+        // UI row index is the room slot identity; slot type must never sort the list.
+        List<LanSlot> slots = participants.Select((row, index) => new LanSlot(
+            row.Country,
+            row.Color,
+            row.Team,
+            row.Difficulty,
             row.Start,
-            row.SlotType == 1,
-            row.SlotType == 3)).ToList();
-        List<LanSlot> active = slots.Where(slot => !slot.Closed).ToList();
-        if (active.Count < 2) throw new InvalidOperationException("至少需要两个未关闭位置。");
+            !humanIndices.Contains(index) && row.SlotType == 1,
+            !humanIndices.Contains(index) && row.SlotType == 3)).ToList();
+        List<LanSlot> active = slots.Where((slot, index) => !slot.Closed && (humanIndices.Contains(index) || slot.Computer)).ToList();
+        if (slots.Count(slot => !slot.Closed) < 2) throw new InvalidOperationException("至少需要两个未关闭位置。");
         if (active.Select(slot => slot.Start).Distinct().Count() != active.Count) throw new InvalidOperationException("可用位置的出生点不能重复。");
         if (active.Select(slot => slot.Color).Distinct().Count() != active.Count) throw new InvalidOperationException("可用位置的颜色不能重复。");
-        GameSpeedChoice speed = (GameSpeedChoice)gameSpeed.SelectedItem!;
+        GameSpeedChoice speed = SelectedSpeed;
         byte[] mapData = File.ReadAllBytes(map.Path);
         return new LanGameSetup(gameMode.SelectedIndex == 0, map.Name, Path.GetFileName(map.Path), mapData, LanGameSetup.Hash(mapData), LanCompatibility.ComputeComponentHash(runtime), (int)credits.Value, speed.GameSpeed, speed.MaxGameTicks, crates.Checked, superWeapons.Checked, shortGame.Checked, revealAllMap.Checked, slots);
     }
@@ -599,6 +618,7 @@ internal sealed class MainForm : Form
             DisposeRoomNetworking();
             string selectedRoomName = string.IsNullOrWhiteSpace(entry.RoomName) ? $"{hostName} 的房间" : entry.RoomName.Trim();
             roomHost = new LanLobbyHost(selectedRoomName, hostName, setup);
+            roomHost.PrepareLaunch = package => PrepareLaunchOnUiAsync(package, roomHost?.HostId ?? Guid.Empty, "127.0.0.1");
             roomHost.StateChanged += state => Ui(() => ApplyRoomState(state));
             roomHost.Launching += package => Ui(() => LaunchRoomPackage(package, roomHost?.HostId ?? Guid.Empty, "127.0.0.1"));
             roomHost.Error += message => Ui(() => roomStatus.Text = message);
@@ -614,22 +634,35 @@ internal sealed class MainForm : Form
     {
         if (applyingRoomState || roomHost is null) return;
         try { roomHost.UpdateSetup(BuildRoomSetup()); }
-        catch (Exception ex) { roomStatus.Text = ex.Message; }
+        catch (Exception ex) { if (lastRoomState is not null) ApplyRoomState(lastRoomState); roomStatus.Text = ex.Message; }
     }
 
     private void ApplyRoomState(LanRoomState state)
     {
+        lastRoomState = state;
+        int selectedRow = grid.CurrentCell?.RowIndex ?? -1;
+        int selectedColumn = grid.CurrentCell?.ColumnIndex ?? -1;
         applyingRoomState = true;
         try
         {
+            grid.EndEdit();
             if (maps.DataSource is IEnumerable<MapInfo> mapItems)
             {
                 MapInfo? match = mapItems.FirstOrDefault(map => Path.GetFileName(map.Path).Equals(state.Setup.MapFileName, StringComparison.OrdinalIgnoreCase) && LanGameSetup.Hash(File.ReadAllBytes(map.Path)) == state.Setup.MapHash);
                 if (match is not null) maps.SelectedItem = match;
+                if (match is null && roomClient is not null && LanGameSetup.Hash(state.Setup.MapData) == state.Setup.MapHash)
+                {
+                    string cache = Path.Combine(Path.GetTempPath(), "Ra2ModeLauncher-map-preview", state.Setup.MapHash + ".map");
+                    Directory.CreateDirectory(Path.GetDirectoryName(cache)!);
+                    if (!File.Exists(cache) || LanGameSetup.Hash(File.ReadAllBytes(cache)) != state.Setup.MapHash) File.WriteAllBytes(cache, state.Setup.MapData);
+                    match = MapScanner.Read(cache) with { Name = state.Setup.MapName };
+                    maps.DataSource = mapItems.Append(match).ToList();
+                    maps.SelectedItem = match;
+                }
                 mapPreview.Map = match;
             }
             gameMode.SelectedIndex = state.Setup.Ra2Mode ? 0 : 1;
-            gameSpeed.SelectedItem = GameData.GameSpeeds.FirstOrDefault(speed => speed.GameSpeed == state.Setup.GameSpeed && speed.MaxGameTicks == state.Setup.MaxGameTicks) ?? gameSpeed.SelectedItem;
+            SelectSpeed(state.Setup.GameSpeed, state.Setup.MaxGameTicks);
             credits.Value = Math.Clamp(state.Setup.Credits, (int)credits.Minimum, (int)credits.Maximum);
             crates.Checked = state.Setup.Crates;
             superWeapons.Checked = state.Setup.SuperWeapons;
@@ -641,7 +674,7 @@ internal sealed class MainForm : Form
             for (int i = 0; i < state.Setup.Slots.Count; i++)
             {
                 LanSlot slot = state.Setup.Slots[i];
-                LanPlayer? player = i < state.Players.Count ? state.Players[i] : null;
+                LanPlayer? player = state.Players.FirstOrDefault(player => player.SlotIndex == i);
                 int slotType = player is not null ? 0 : slot.Closed ? 3 : slot.Computer ? 1 : 2;
                 participants.Add(new ParticipantRow
                 {
@@ -657,21 +690,38 @@ internal sealed class MainForm : Form
                     Start = slot.Start
                 });
                 rowPlayerIds.Add(player?.Id);
+                if (player is null)
+                {
+                    // Human ownership comes from joining the room, never from a dropdown.
+                    ((DataGridViewComboBoxCell)grid.Rows[i].Cells[nameof(ParticipantRow.SlotType)]).DataSource = GameData.SlotTypes.Where(choice => choice.Value != 0).ToArray();
+                }
             }
+            if (selectedRow >= 0 && selectedRow < grid.Rows.Count && selectedColumn >= 0 && selectedColumn < grid.Columns.Count)
+                grid.CurrentCell = grid[selectedColumn, selectedRow];
             grid.Refresh();
             LanPlayer? local = state.Players.FirstOrDefault(player => player.Id == LocalRoomPlayerId);
             localRoomReady = local?.Ready ?? false;
-            roomReady.Enabled = state.Players.Count > 1;
+            int localRow = rowPlayerIds.FindIndex(id => id == LocalRoomPlayerId);
+            mapPreview.LocalStart = localRow >= 0 ? participants[localRow].Start : 0;
+            mapPreview.Invalidate();
+            bool waiting = state.Phase == "等待中" && !startingRoom;
+            roomReady.Enabled = waiting && state.Players.Count > 1;
             roomReady.Text = localRoomReady ? "取消准备" : "准备";
             roomReady.Visible = state.Players.Count > 1;
             bool isHost = roomHost is not null;
             roomStart.Visible = isHost;
             string launchReason = "";
             roomStart.Enabled = isHost && !startingRoom && roomHost!.CanLaunch(out launchReason);
-            SetHostControlsEnabled(isHost);
+            SetHostControlsEnabled(isHost && waiting);
+            runtimePath.Enabled = waiting && isHost;
+            resolution.Enabled = waiting;
+            grid.Enabled = waiting;
+            mapPreview.AllowStartSelection = waiting && local is not null;
+            roomTitle.Text = $"{state.RoomName} · {(isHost ? "房主" : "玩家")} · {state.Phase}";
             string address = isHost ? LanNetworkAddress.GetPreferredIPv4() : roomClient?.HostAddress ?? "";
             string role = isHost ? "房主" : "玩家";
             roomStatus.Text = $"{role}｜{state.RoomName}｜{state.Players.Count}/{state.MaxHumanPlayers} 人｜{address}:{LanLobbyHost.LobbyPort}" + (launchReason.Length > 0 ? $"｜{launchReason}" : "");
+            if (state.Players.Count > 1) roomStatus.Text += "｜速度由房主统一设置，局内锁定";
         }
         finally { applyingRoomState = false; }
     }
@@ -681,6 +731,7 @@ internal sealed class MainForm : Form
         gameMode.Enabled = enabled;
         maps.Enabled = enabled;
         gameSpeed.Enabled = enabled;
+        customSpeed.Enabled = enabled && gameSpeed.SelectedItem is GameSpeedChoice { Custom: true };
         credits.Enabled = enabled;
         crates.Enabled = enabled;
         superWeapons.Enabled = enabled;
@@ -697,7 +748,18 @@ internal sealed class MainForm : Form
             if (roomHost is not null) roomHost.UpdateHostPlayer(slot);
             else if (roomClient is not null) _ = UpdateClientPlayerAsync(slot);
         }
-        catch (Exception ex) { roomStatus.Text = ex.Message; }
+        catch (Exception ex) { if (lastRoomState is not null) ApplyRoomState(lastRoomState); roomStatus.Text = ex.Message; }
+    }
+
+    private async Task UpdateRoomNameAsync(string name)
+    {
+        try
+        {
+            if (roomHost is not null) roomHost.UpdateHostName(name);
+            else if (roomClient is not null) await roomClient.UpdateNameAsync(name);
+            config.PlayerName = name.Trim(); config.Save();
+        }
+        catch (Exception ex) { if (lastRoomState is not null) ApplyRoomState(lastRoomState); roomStatus.Text = ex.Message; }
     }
 
     private async Task UpdateClientPlayerAsync(LanSlot slot)
@@ -725,9 +787,11 @@ internal sealed class MainForm : Form
             DisposeRoomNetworking();
             var client = new LanLobbyClient();
             roomClient = client;
+            client.PrepareLaunch = package => PrepareLaunchOnUiAsync(package, client.PlayerId, client.HostAddress);
             client.StateChanged += state => Ui(() => ApplyRoomState(state));
             client.LaunchReceived += package => Ui(() => LaunchRoomPackage(package, client.PlayerId, client.HostAddress));
             client.Error += message => Ui(() => roomStatus.Text = message);
+            client.Disconnected += message => Ui(() => { grid.Enabled = false; roomReady.Enabled = false; mapPreview.AllowStartSelection = false; roomStatus.Text = $"连接已断开：{message}"; ReturnHomeRequested?.Invoke(); });
             roomStatus.Text = $"正在连接 {hostAddress}:{LanLobbyHost.LobbyPort}…";
             await client.ConnectAsync(hostAddress, player);
         }
@@ -747,12 +811,40 @@ internal sealed class MainForm : Form
             if (roomHost.CurrentState.Players.Count == 1)
             {
                 Generate(false);
+                roomHost.SetSoloPlaying();
                 StartGameProcess(loadSave: false);
                 status.Text = "单机游戏已启动";
             }
             else await roomHost.LaunchAsync();
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "无法开始", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception ex) { roomHost?.ReportGameExited(); MessageBox.Show(ex.Message, "无法开始", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+
+    private Task<string?> PrepareLaunchOnUiAsync(LanLaunchPackage package, Guid localId, string hostAddress)
+    {
+        var check = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (IsDisposed || !IsHandleCreated) { check.SetResult("房间窗口已关闭。"); return check.Task; }
+        void Prepare()
+        {
+            try
+            {
+                string runtime = runtimePath.Text.Trim();
+                if (localId == Guid.Empty) throw new InvalidOperationException("本机玩家编号尚未收到。");
+                if (!File.Exists(Path.Combine(runtime, "Syringe.exe"))) throw new FileNotFoundException("缺少 Syringe.exe。");
+                if (LanCompatibility.ComputeComponentHash(runtime) != package.Setup.ComponentHash) throw new InvalidOperationException("联机组件与房主不一致，请更新后重新准备。");
+                ResolutionChoice display = (ResolutionChoice)resolution.SelectedItem!;
+                IniFileEditor.SetVideoResolution(runtime, display.Width, display.Height);
+                package.Setup.ValidateSpeed();
+                IniFileEditor.ConfigureCncDdraw(runtime, package.Setup.EffectiveMaxGameTicks);
+                SpawnWriter.WriteLan(runtime, package, localId, hostAddress);
+                IniFileEditor.VerifyLanSpeed(runtime, package.Setup);
+                status.Text = "本机检查通过，等待所有玩家确认。";
+                check.SetResult(null);
+            }
+            catch (Exception ex) { check.SetResult(ex.Message); }
+        }
+        if (InvokeRequired) BeginInvoke((Action)Prepare); else Prepare();
+        return check.Task;
     }
 
     private void LaunchRoomPackage(LanLaunchPackage package, Guid localId, string hostAddress)
@@ -765,22 +857,26 @@ internal sealed class MainForm : Form
             if (localId == Guid.Empty) throw new InvalidOperationException("尚未收到本机玩家编号。");
             if (!string.Equals(LanCompatibility.ComputeComponentHash(runtime), package.Setup.ComponentHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("本机的联机组件与房主不一致。");
-            IniFileEditor.ConfigureCncDdraw(runtime, package.Setup.MaxGameTicks);
+            package.Setup.ValidateSpeed();
+            IniFileEditor.ConfigureCncDdraw(runtime, package.Setup.EffectiveMaxGameTicks);
             SpawnWriter.WriteLan(runtime, package, localId, hostAddress);
+            IniFileEditor.VerifyLanSpeed(runtime, package.Setup);
             StartGameProcess(loadSave: false);
             status.Text = "联机配置已同步，游戏正在启动";
         }
         catch (Exception ex)
         {
             startingRoom = false;
+            roomHost?.ReportGameExited();
+            if (roomClient is not null) _ = roomClient.ReportGameExitedAsync();
             MessageBox.Show(ex.Message, "联机启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
     private void Ui(Action action)
     {
-        if (IsDisposed) return;
-        if (InvokeRequired) BeginInvoke(action); else action();
+        if (IsDisposed || !IsHandleCreated) return;
+        BeginInvoke((Action)(() => { if (!IsDisposed) action(); }));
     }
 
     private void DisposeRoomNetworking()
@@ -790,6 +886,7 @@ internal sealed class MainForm : Form
         roomClient = null;
         roomHost = null;
         startingRoom = false;
+        lastRoomState = null;
     }
 
     protected override void Dispose(bool disposing)

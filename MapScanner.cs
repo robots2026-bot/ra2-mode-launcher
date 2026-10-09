@@ -18,7 +18,7 @@ internal static partial class MapScanner
             .ToList();
     }
 
-    private static MapInfo Read(string path)
+    public static MapInfo Read(string path)
     {
         string text = ReadText(path);
         int count = ParseInt(NumberStartingPointsRegex().Match(text).Groups[1].Value);

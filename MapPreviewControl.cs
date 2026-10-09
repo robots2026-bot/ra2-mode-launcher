@@ -7,6 +7,7 @@ internal sealed class MapPreviewControl : Control
     private readonly Dictionary<int, (Color Color, string Name)> occupants = [];
     private static readonly Color[] PlayerColors = [Color.Gold, Color.Red, Color.DeepSkyBlue, Color.LimeGreen, Color.Orange, Color.Cyan, Color.MediumPurple, Color.HotPink];
     public bool AllowStartSelection { get; set; }
+    public int LocalStart { get; set; }
     public void SetPlayers(IEnumerable<(int Start, int Color, string Name)> players)
     {
         occupants.Clear();
@@ -40,6 +41,12 @@ internal sealed class MapPreviewControl : Control
     {
         base.OnPaint(e);
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        if (map is null)
+        {
+            e.Graphics.Clear(Color.FromArgb(241, 243, 246));
+            TextRenderer.DrawText(e.Graphics, "请选择左侧房间查看地图\r\n或创建房间，设置地图与玩家", Font, ClientRectangle, Color.DimGray, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
+            return;
+        }
         Rectangle area = PreviewArea();
         string caption = map is null ? "没有可用地图：请选择房间；缺少地图或版本不一致时暂不预览" : $"{map.Name} · {map.StartingPoints} 人 · {(AllowStartSelection ? "点击未占用编号设置自己的出生点" : "地图预览（只读）")}";
         TextRenderer.DrawText(e.Graphics, caption, Font, new Rectangle(12, 4, Math.Max(1, Width - 24), 30), Color.White, TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter);
@@ -112,9 +119,10 @@ internal sealed class MapPreviewControl : Control
         Rectangle circle = new(point.X - radius, point.Y - radius, radius * 2, radius * 2);
         bool occupied = occupants.TryGetValue(number, out var owner);
         using var brush = new SolidBrush(occupied ? owner.Color : Color.FromArgb(225, 230, 235));
-        using var pen = new Pen(Color.White, 2f);
+        using var pen = new Pen(number == LocalStart ? Color.White : Color.FromArgb(150, 170, 180), number == LocalStart ? 4f : 1.5f);
         graphics.FillEllipse(brush, circle);
         graphics.DrawEllipse(pen, circle);
+        if (number == LocalStart) graphics.DrawEllipse(pen, Rectangle.Inflate(circle, 5, 5));
         using var boldFont = new Font(Font, FontStyle.Bold);
         TextRenderer.DrawText(graphics, number.ToString(), boldFont, circle, Color.Black, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
     }

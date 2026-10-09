@@ -12,6 +12,7 @@ internal static class SpawnWriter
         string spawnMapPath = Path.Combine(runtimePath, "spawnmap.ini");
         File.Copy(options.Map.Path, spawnMapPath, true);
         MapPatcher.AddChronoLegionnaireWallPassThrough(spawnMapPath);
+        MapPatcher.SetProductionQueueLimit(spawnMapPath);
         if (options.RevealAllMap) MapPatcher.AddRevealAllTrigger(spawnMapPath);
 
         var sb = new StringBuilder();
@@ -20,7 +21,7 @@ internal static class SpawnWriter
             ("PlayerCount", "1"), ("Side", options.Country.Value.ToString()), ("Color", options.Color.Value.ToString()), ("AIPlayers", options.Ais.Count.ToString()),
             ("Seed", Random.Shared.Next(1, int.MaxValue).ToString()), ("Ra2Mode", Bool(options.Ra2Mode)), ("Bases", "true"), ("Credits", options.Credits.ToString()),
             ("Crates", Bool(options.Crates)), ("Superweapons", Bool(options.SuperWeapons)), ("MCVRedeploy", "true"), ("ShortGame", Bool(options.ShortGame)),
-            ("TechLevel", "10"), ("GameSpeed", options.GameSpeed.ToString()), ("UnitCount", "0"), ("BridgeDestroy", "true"), ("AlliesAllowed", "false"), ("ForceMultiplayer", "false"),
+            ("TechLevel", "10"), ("GameSpeed", options.GameSpeed.ToString()), ("LauncherCncPacing", Bool(CncSpeedComponent.IsInstalled(runtimePath))), ("LauncherLiveSpeed", Bool(CncSpeedComponent.IsInstalled(runtimePath))), ("DisableGameSpeed", Bool(CncSpeedComponent.IsInstalled(runtimePath))), ("UnitCount", "0"), ("BridgeDestroy", "true"), ("AlliesAllowed", "false"), ("ForceMultiplayer", "false"),
             ("AutoSaveCount", "0"), ("AutoSaveInterval", "0"));
 
         var countries = new List<(string, string)>();
@@ -73,13 +74,14 @@ internal static class SpawnWriter
             throw new InvalidOperationException("只能加载独立运行目录 Saved Games 中的存档。");
 
         var sb = new StringBuilder();
-        Section(sb, "Settings", ("LoadSaveGame", "yes"), ("SaveGameName", Path.GetFileName(save.Path)));
+        Section(sb, "Settings", ("LoadSaveGame", "yes"), ("SaveGameName", Path.GetFileName(save.Path)), ("LauncherCncPacing", Bool(CncSpeedComponent.IsInstalled(runtimePath))), ("LauncherLiveSpeed", Bool(CncSpeedComponent.IsInstalled(runtimePath))), ("ForceMultiplayer", "false"));
         File.WriteAllText(Path.Combine(runtimePath, "spawn.ini"), sb.ToString(), new UTF8Encoding(false));
     }
 
     public static void WriteLan(string runtimePath, LanLaunchPackage package, Guid localPlayerId, string hostAddress)
     {
         LanGameSetup options = package.Setup;
+        options.ValidateSpeed();
         if (LanGameSetup.Hash(options.MapData) != options.MapHash) throw new InvalidDataException("收到的地图内容与房主哈希不一致。");
         if (package.Players.Count < 2 || package.Players.Count > options.Slots.Count) throw new InvalidDataException("联机玩家数量不合法。");
         int localIndex = package.Players.FindIndex(p => p.Id == localPlayerId);
@@ -89,11 +91,14 @@ internal static class SpawnWriter
         string spawnMapPath = Path.Combine(runtimePath, "spawnmap.ini");
         File.WriteAllBytes(spawnMapPath, options.MapData);
         MapPatcher.AddChronoLegionnaireWallPassThrough(spawnMapPath);
+        MapPatcher.SetProductionQueueLimit(spawnMapPath);
         if (options.RevealAllMap) MapPatcher.AddRevealAllTrigger(spawnMapPath);
 
         int humanCount = package.Players.Count;
-        List<LanSlot> humanSlots = options.Slots.Take(humanCount).ToList();
-        List<LanSlot> aiSlots = options.Slots.Skip(humanCount).Where(slot => slot.Computer).ToList();
+        if (package.Players.Select(player => player.SlotIndex).Distinct().Count() != humanCount || package.Players.Any(player => player.SlotIndex < 0 || player.SlotIndex >= options.Slots.Count || options.Slots[player.SlotIndex].Closed || options.Slots[player.SlotIndex].Computer))
+            throw new InvalidDataException("联机玩家的位置编号无效。");
+        List<LanSlot> humanSlots = package.Players.Select(player => options.Slots[player.SlotIndex]).ToList();
+        List<LanSlot> aiSlots = options.Slots.Where(slot => slot.Computer && !slot.Closed).ToList();
         LanPlayer localPlayer = package.Players[localIndex];
         LanSlot localSlot = humanSlots[localIndex];
         var sb = new StringBuilder();
@@ -103,7 +108,7 @@ internal static class SpawnWriter
             ("Seed", package.GameId.ToString()), ("GameID", package.GameId.ToString()), ("Port", LanLobbyHost.GamePort.ToString()), ("Host", Bool(localPlayer.IsHost)),
             ("Ra2Mode", Bool(options.Ra2Mode)), ("Bases", "true"), ("Credits", options.Credits.ToString()), ("Crates", Bool(options.Crates)),
             ("Superweapons", Bool(options.SuperWeapons)), ("MCVRedeploy", "true"), ("ShortGame", Bool(options.ShortGame)), ("TechLevel", "10"),
-            ("GameSpeed", options.GameSpeed.ToString()), ("UnitCount", "0"), ("BridgeDestroy", "true"), ("AlliesAllowed", "false"), ("ForceMultiplayer", "true"),
+            ("GameSpeed", options.GameSpeed.ToString()), ("LauncherCncPacing", Bool(options.GameSpeed == 0 && CncSpeedComponent.IsInstalled(runtimePath))), ("LauncherLiveSpeed", "false"), ("DisableGameSpeed", "true"), ("UnitCount", "0"), ("BridgeDestroy", "true"), ("AlliesAllowed", "false"), ("ForceMultiplayer", "true"),
             ("AutoSaveCount", "0"), ("AutoSaveInterval", "0"));
 
         int other = 1;
@@ -167,6 +172,7 @@ internal static class SpawnWriter
     private static void Section(StringBuilder sb, string name, params (string Key, string Value)[] values)
     {
         sb.Append('[').Append(name).AppendLine("]");
+        if (name == "Settings") sb.AppendLine("QuickExit=true");
         foreach ((string key, string value) in values) sb.Append(key).Append('=').AppendLine(value);
         sb.AppendLine();
     }

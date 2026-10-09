@@ -6,6 +6,7 @@ internal sealed class LauncherShellForm : Form
     private readonly HomeForm lobbyPanel = new();
     private readonly Panel roomHost = new() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(241, 243, 246) };
     private MainForm? roomPanel;
+    private readonly GamePerformanceOverlay performanceOverlay = new();
     private readonly MapPreviewControl sharedPreview = new() { Dock = DockStyle.Fill, AllowStartSelection = false };
 
     public LauncherShellForm()
@@ -23,6 +24,7 @@ internal sealed class LauncherShellForm : Form
         StartPosition = FormStartPosition.CenterScreen;
 
         Controls.Add(workspace);
+        Controls.Add(new GameToolsBar());
         workspace.Panel1.Padding = new Padding(0, 0, 3, 0);
         workspace.Panel2.Padding = new Padding(3, 0, 0, 0);
         workspace.Panel2.Controls.Add(roomHost);
@@ -34,6 +36,7 @@ internal sealed class LauncherShellForm : Form
         FormClosing += (_, e) => StartupTrace.Mark($"shell closing reason={e.CloseReason}");
         FormClosed += (_, _) =>
         {
+            performanceOverlay.Dispose();
             StartupTrace.Mark("shell closed");
             sharedPreview.Parent?.Controls.Remove(sharedPreview);
             roomPanel?.Dispose();
@@ -77,6 +80,7 @@ internal sealed class LauncherShellForm : Form
         lobbyPanel.SetRoomActive(false);
         sharedPreview.AllowStartSelection = false;
         sharedPreview.SetPlayers([]);
+        sharedPreview.LocalStart = 0;
         lobbyPanel.RefreshPreview();
         Text = "红色警戒 2 / 尤里的复仇启动器";
     }

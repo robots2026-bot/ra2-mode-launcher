@@ -7,11 +7,20 @@ internal sealed record LanSlot(int Country, int Color, int Team, int Difficulty,
 internal sealed record LanGameSetup(bool Ra2Mode, string MapName, string MapFileName, byte[] MapData, string MapHash, string ComponentHash, int Credits, int GameSpeed, int MaxGameTicks, bool Crates, bool SuperWeapons, bool ShortGame, bool RevealAllMap, List<LanSlot> Slots)
 {
     public static string Hash(byte[] data) => Convert.ToHexString(SHA256.HashData(data));
+
+    // Native presets remain the default; external high-speed pacing needs real LAN validation.
+    public void ValidateSpeed()
+    {
+        if (!(GameSpeed is >= 1 and <= 6 && MaxGameTicks == 0 || GameSpeed == 0 && (MaxGameTicks == -1 || MaxGameTicks is >= 1 and <= 1000)))
+            throw new InvalidDataException("房间速度配置无效，请使用相同版本加载器选择速度预设。");
+    }
+
+    public int EffectiveMaxGameTicks => MaxGameTicks == 0 ? -1 : MaxGameTicks;
 }
 
 internal static class LanCompatibility
 {
-    private static readonly string[] CriticalFiles = ["gamemd-spawn.exe", "Ares.dll", "Phobos.dll", "CnCNet-Spawner.dll", "ra2mode.mix"];
+    private static readonly string[] CriticalFiles = ["gamemd-spawn.exe", "Ares.dll", "Phobos.dll", "CnCNet-Spawner.dll", "ra2mode.mix", "ddraw.dll"];
 
     public static string ComputeComponentHash(string runtimePath)
     {
@@ -31,9 +40,9 @@ internal static class LanCompatibility
     }
 }
 
-internal sealed record LanPlayer(Guid Id, string Name, string Address, bool Ready, bool IsHost);
+internal sealed record LanPlayer(Guid Id, string Name, string Address, bool Ready, bool IsHost, int SlotIndex = 0);
 
-internal sealed record LanRoomState(string RoomName, string MapName, int Capacity, int MaxHumanPlayers, List<LanPlayer> Players, LanGameSetup Setup);
+internal sealed record LanRoomState(string RoomName, string MapName, int Capacity, int MaxHumanPlayers, List<LanPlayer> Players, LanGameSetup Setup, string Phase = "等待中");
 
 internal sealed record LanRoomAnnouncement(
     string RoomName,
@@ -67,6 +76,8 @@ internal sealed class LanMessage
     public LanRoomState? State { get; set; }
     public LanLaunchPackage? Launch { get; set; }
     public string? Error { get; set; }
+    public int ProtocolVersion { get; set; }
+    public int GameId { get; set; }
 }
 
 internal sealed record DiscoveredLanRoom(string Address, LanRoomAnnouncement Announcement)

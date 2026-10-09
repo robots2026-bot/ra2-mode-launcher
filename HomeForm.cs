@@ -4,12 +4,13 @@ namespace Ra2ModeLauncher;
 
 internal sealed class HomeForm : Form
 {
-    private const int MapColumnWidth = 190;
+    private const int MapColumnWidth = 135;
     private sealed record RoomSeen(DiscoveredLanRoom Room, DateTime SeenAt);
 
     private readonly LauncherConfig config = LauncherConfig.Load();
     private readonly TextBox playerName = new() { Width = 150 };
-    private readonly TextBox roomName = new() { Width = 190 };
+    private readonly TextBox roomName = new() { Dock = DockStyle.Fill };
+    private readonly Button loadSave = new() { Text = "加载存档", AutoSize = true };
     private readonly ComboBox savedGames = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ListView rooms = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false, HideSelection = false, GridLines = true };
     public event Action<MapInfo?>? PreviewRequested;
@@ -30,6 +31,8 @@ internal sealed class HomeForm : Form
     {
         roomActive = active;
         savedGames.Enabled = !active;
+        loadSave.Enabled = !active;
+        playerName.Enabled = !active;
     }
     public event Action<RoomEntry>? OpenRoomRequested;
 
@@ -60,7 +63,7 @@ internal sealed class HomeForm : Form
     private void BuildLayout()
     {
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12, 10, 9, 10), ColumnCount = 1, RowCount = 6 };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 42)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 58)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 60)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 40)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize)); root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var title = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0, 0, 0, 7) };
         title.Controls.Add(new Label { Text = "局域网大厅", AutoSize = true, Font = new Font(Font.FontFamily, 13f, FontStyle.Bold) });
         title.Controls.Add(new Label { Text = "房间列表与右侧当前房间同时显示", AutoSize = true, ForeColor = Color.DimGray });
@@ -77,7 +80,8 @@ internal sealed class HomeForm : Form
         createBar.Controls.Add(createGrid); root.Controls.Add(createBar, 0, 1);
 
         var listBox = new GroupBox { Text = "可用对局（自动刷新）", Dock = DockStyle.Fill, Padding = new Padding(7), Margin = new Padding(0, 0, 0, 7) };
-        rooms.Columns.Add("房间", 100); rooms.Columns.Add("地图", MapColumnWidth); rooms.Columns.Add("人数", 45); rooms.Columns.Add("状态", 52);
+        rooms.ShowItemToolTips = true;
+        rooms.Columns.Add("房间", 130); rooms.Columns.Add("地图", MapColumnWidth); rooms.Columns.Add("人数", 45); rooms.Columns.Add("状态", 70);
         rooms.ColumnWidthChanging += (_, e) => { if (e.ColumnIndex == 1) { e.NewWidth = MapColumnWidth; e.Cancel = true; } };
         rooms.SelectedIndexChanged += (_, _) => ShowSelectedRoom(); rooms.DoubleClick += (_, _) => JoinSelectedRoom();
         listBox.Controls.Add(rooms); root.Controls.Add(listBox, 0, 2);
@@ -95,8 +99,8 @@ internal sealed class HomeForm : Form
         var saveGrid = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3 };
         saveGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); saveGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); saveGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         Button refresh = new() { Text = "刷新", AutoSize = true }; refresh.Click += (_, _) => ReloadSaves();
-        Button load = new() { Text = "加载存档", AutoSize = true }; load.Click += (_, _) => LoadSelectedSave();
-        saveGrid.Controls.Add(savedGames, 0, 0); saveGrid.Controls.Add(refresh, 1, 0); saveGrid.Controls.Add(load, 2, 0); saveBox.Controls.Add(saveGrid); root.Controls.Add(saveBox, 0, 4);
+        loadSave.Click += (_, _) => LoadSelectedSave();
+        saveGrid.Controls.Add(savedGames, 0, 0); saveGrid.Controls.Add(refresh, 1, 0); saveGrid.Controls.Add(loadSave, 2, 0); saveBox.Controls.Add(saveGrid); root.Controls.Add(saveBox, 0, 4);
         status.Text = "正在搜索局域网房间…"; status.Padding = new Padding(0, 4, 0, 0); root.Controls.Add(status, 0, 5); Controls.Add(root);
     }
 
@@ -130,7 +134,8 @@ internal sealed class HomeForm : Form
         {
             LanRoomAnnouncement value = seen.Room.Announcement;
             var item = new ListViewItem(value.RoomName) { Name = key, Tag = seen.Room };
-            item.SubItems.Add(value.MapName); item.SubItems.Add($"{value.Players}/{value.Capacity}"); item.SubItems.Add(value.OpenSlots > 0 ? value.Status : "已满");
+            item.ToolTipText = $"{value.RoomName}\n{value.MapName}\n{seen.Room.Address}:{LanLobbyHost.LobbyPort}\n{value.Status}";
+            item.SubItems.Add(value.MapName); item.SubItems.Add($"{value.Players}/{value.Capacity}"); item.SubItems.Add(value.Status != "等待中" ? value.Status : value.OpenSlots > 0 ? value.Status : "已满");
             rooms.Items.Add(item); if (key == selectKey) item.Selected = true;
         }
         rooms.EndUpdate();
@@ -143,7 +148,7 @@ internal sealed class HomeForm : Form
     private void ShowSelectedRoom()
     {
         DiscoveredLanRoom? selected = SelectedRoom();
-        joinSelected.Enabled = selected is not null && selected.Announcement.OpenSlots > 0;
+        joinSelected.Enabled = selected is not null && selected.Announcement.OpenSlots > 0 && selected.Announcement.Status == "等待中";
         if (selected is null) { selectedPreview = null; RefreshPreview(); roomDetails.Text = "选择房间后，右侧显示地图预览。"; return; }
         LanRoomAnnouncement room = selected.Announcement;
         MapInfo? localMap = localMaps.FirstOrDefault(map => string.Equals(Path.GetFileName(map.Path), room.MapFileName, StringComparison.OrdinalIgnoreCase)) ?? localMaps.FirstOrDefault(map => string.Equals(map.Name, room.MapName, StringComparison.OrdinalIgnoreCase));
@@ -189,7 +194,7 @@ internal sealed class HomeForm : Form
         OpenRoom(RoomEntry.Create(config.PlayerName, name));
     }
 
-    private void JoinSelectedRoom() { DiscoveredLanRoom? selected = SelectedRoom(); if (selected is null || !SaveIdentity()) return; OpenRoom(RoomEntry.Join(config.PlayerName, selected.Address)); }
+    private void JoinSelectedRoom() { DiscoveredLanRoom? selected = SelectedRoom(); if (selected is null || selected.Announcement.OpenSlots <= 0 || selected.Announcement.Status != "等待中" || !SaveIdentity()) return; OpenRoom(RoomEntry.Join(config.PlayerName, selected.Address)); }
     private void OpenDirectRoom()
     {
         if (!SaveIdentity()) return;
@@ -229,7 +234,7 @@ internal sealed class HomeForm : Form
         {
             if (savedGames.SelectedItem is not SaveInfo save) throw new InvalidOperationException("没有可加载的 .SAV 存档。");
             if (!File.Exists(Path.Combine(config.RuntimePath, "Syringe.exe"))) throw new FileNotFoundException("当前游戏目录缺少 Syringe.exe。");
-            IniFileEditor.ConfigureCncDdraw(config.RuntimePath, config.MaxGameTicks); SpawnWriter.WriteLoadSave(config.RuntimePath, save);
+            IniFileEditor.ConfigureSinglePlayerSpeed(config.RuntimePath, config.GameSpeed, config.MaxGameTicks); SpawnWriter.WriteLoadSave(config.RuntimePath, save);
             Process.Start(new ProcessStartInfo { FileName = Path.Combine(config.RuntimePath, "Syringe.exe"), Arguments = save.UsesAresExtensions ? "-i=Ares.dll -i=CnCNet-Spawner.dll -i=Phobos.dll gamemd-spawn.exe --args=\"-SPAWN -LOG -CD -Include -Inheritance -RA2ModeSaveID=0x8d113b94\"" : "-i=CnCNet-Spawner.dll gamemd-spawn.exe --args=\"-SPAWN -LOG -CD -Include -Inheritance -RA2ModeSaveID=0x8d113b94\"", WorkingDirectory = config.RuntimePath, UseShellExecute = true });
             status.Text = $"正在加载 {save.DisplayName}";
         }

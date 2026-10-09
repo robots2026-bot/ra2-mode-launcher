@@ -5,6 +5,18 @@ namespace Ra2ModeLauncher;
 
 internal static class MapPatcher
 {
+    internal const int ProductionQueueLimit = 100;
+
+    public static void SetProductionQueueLimit(string path)
+    {
+        byte[] bytes = File.ReadAllBytes(path);
+        Encoding encoding = DetectEncoding(bytes);
+        string text = encoding.GetString(bytes);
+        string newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        text = SetSectionValue(text, "General", "MaximumQueuedObjects", ProductionQueueLimit.ToString(System.Globalization.CultureInfo.InvariantCulture), newline);
+        File.WriteAllText(path, text, encoding);
+    }
+
     public static void AddChronoLegionnaireWallPassThrough(string path)
     {
         byte[] bytes = File.ReadAllBytes(path);
@@ -43,7 +55,7 @@ internal static class MapPatcher
 
     private static string SetSectionValue(string text, string section, string key, string value, string newline)
     {
-        var sectionRegex = new Regex($@"(?im)^\[{Regex.Escape(section)}\]\s*$", RegexOptions.CultureInvariant);
+        var sectionRegex = new Regex($@"(?im)^\[{Regex.Escape(section)}\][ \t]*\r?$", RegexOptions.CultureInvariant);
         Match sectionMatch = sectionRegex.Match(text);
         if (!sectionMatch.Success)
             return text.TrimEnd('\r', '\n') + newline + newline + $"[{section}]" + newline + $"{key}={value}" + newline;
@@ -52,7 +64,7 @@ internal static class MapPatcher
         if (sectionEnd < 0) sectionEnd = text.Length;
         int contentStart = sectionMatch.Index + sectionMatch.Length;
         string content = text[contentStart..sectionEnd];
-        var keyRegex = new Regex($@"(?im)^(\s*){Regex.Escape(key)}\s*=.*$", RegexOptions.CultureInvariant);
+        var keyRegex = new Regex($@"(?im)^[ \t]*{Regex.Escape(key)}[ \t]*=[^\r\n]*", RegexOptions.CultureInvariant);
         Match keyMatch = keyRegex.Match(content);
         if (keyMatch.Success)
         {

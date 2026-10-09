@@ -109,6 +109,7 @@ internal sealed class LanLobbyForm : Form
         try
         {
             host = new LanLobbyHost(string.IsNullOrWhiteSpace(roomName.Text) ? "红警局域网房间" : roomName.Text.Trim(), playerName, setup);
+            host.PrepareLaunch = package => Task.FromResult(Prepare(package, host.HostId, "127.0.0.1"));
             host.StateChanged += state => Ui(() => ApplyState(state, host.HostId));
             host.Launching += package => Ui(() => Launch(package, host.HostId, "127.0.0.1"));
             host.Error += error => Ui(() => status.Text = error);
@@ -133,6 +134,7 @@ internal sealed class LanLobbyForm : Form
         try
         {
             client = new LanLobbyClient();
+            client.PrepareLaunch = package => Task.FromResult(Prepare(package, client.PlayerId, client.HostAddress));
             client.StateChanged += state => Ui(() => ApplyState(state, client.PlayerId));
             client.LaunchReceived += package => Ui(() => Launch(package, client.PlayerId, client.HostAddress));
             client.Error += error => Ui(() => { status.Text = error; ready.Enabled = false; });
@@ -194,8 +196,9 @@ internal sealed class LanLobbyForm : Form
             string localComponentHash = LanCompatibility.ComputeComponentHash(runtimePath);
             if (!string.Equals(localComponentHash, package.Setup.ComponentHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("本机的游戏 EXE、Ares、Phobos、CnCNet Spawner 或 ra2mode.mix 与房主不一致，已阻止启动以避免联机不同步。");
-            IniFileEditor.ConfigureCncDdraw(runtimePath, package.Setup.MaxGameTicks);
+            IniFileEditor.ConfigureCncDdraw(runtimePath, package.Setup.EffectiveMaxGameTicks);
             SpawnWriter.WriteLan(runtimePath, package, localId, actualHostAddress);
+            IniFileEditor.VerifyLanSpeed(runtimePath, package.Setup);
             string syringe = Path.Combine(runtimePath, "Syringe.exe");
             if (!File.Exists(syringe)) throw new FileNotFoundException("运行目录缺少 Syringe.exe。", syringe);
             Process.Start(new ProcessStartInfo
@@ -212,6 +215,21 @@ internal sealed class LanLobbyForm : Form
             launching = false;
             MessageBox.Show(ex.Message, "联机启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private string? Prepare(LanLaunchPackage package, Guid localId, string hostAddress)
+    {
+        try
+        {
+            if (!File.Exists(Path.Combine(runtimePath, "Syringe.exe"))) throw new FileNotFoundException("运行目录缺少 Syringe.exe。");
+            if (LanCompatibility.ComputeComponentHash(runtimePath) != package.Setup.ComponentHash) throw new InvalidDataException("联机组件（含 cnc-ddraw）与房主不一致。");
+            package.Setup.ValidateSpeed();
+            IniFileEditor.ConfigureCncDdraw(runtimePath, package.Setup.EffectiveMaxGameTicks);
+            SpawnWriter.WriteLan(runtimePath, package, localId, hostAddress);
+            IniFileEditor.VerifyLanSpeed(runtimePath, package.Setup);
+            return null;
+        }
+        catch (Exception ex) { return ex.Message; }
     }
 
     private void Ui(Action action)

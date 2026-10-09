@@ -5,7 +5,7 @@ internal sealed record Choice(string Name, int Value)
     public override string ToString() => Name;
 }
 
-internal sealed record GameSpeedChoice(string Name, int GameSpeed, int MaxGameTicks)
+internal sealed record GameSpeedChoice(string Name, int GameSpeed, int MaxGameTicks, bool Custom = false)
 {
     public override string ToString() => Name;
 }
@@ -44,8 +44,8 @@ internal static class GameData
     public static readonly Choice[] Starts = Enumerable.Range(1, 8).Select(value => new Choice($"位置 {value}", value)).ToArray();
     public static readonly GameSpeedChoice[] GameSpeeds =
     [
-        new("不限速", 0, -1), new("超快（120）", 0, 120), new("极快（90）", 0, 90), new("更快（75）", 0, 75),
-        new("很快（推荐）", 1, 0), new("较快", 2, 0), new("正常", 3, 0), new("较慢", 4, 0), new("很慢", 5, 0), new("最慢", 6, 0)
+        new("不限速（联机实验）", 0, -1), new("超快（120·联机实验）", 0, 120), new("极快（90·联机实验）", 0, 90), new("更快（75·联机实验）", 0, 75),
+        new("很快（推荐）", 1, 0), new("较快", 2, 0), new("正常", 3, 0), new("较慢", 4, 0), new("很慢", 5, 0), new("最慢", 6, 0), new("自定义（联机实验）", 0, 60, true)
     ];
     public static readonly ResolutionChoice[] Resolutions =
     [
